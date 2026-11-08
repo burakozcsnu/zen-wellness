@@ -1,0 +1,409 @@
+const { Client } = require('pg');
+
+const dbPassword = process.env.SUPABASE_DB_PASSWORD;
+if (!dbPassword) {
+  throw new Error('SUPABASE_DB_PASSWORD environment variable is required.');
+}
+
+const client = new Client({
+  user: 'postgres.mdcvljbbnoxqsfwcjvqz',
+  host: 'aws-1-eu-central-1.pooler.supabase.com',
+  database: 'postgres',
+  password: dbPassword,
+  port: 6543,
+  ssl: { rejectUnauthorized: false }
+});
+
+const tables = [
+  'uyeler',
+  'programlar',
+  'olcumler',
+  'antrenmanlar',
+  'dokumanlar',
+  'master_egzersizler',
+  'master_besinler',
+  'beslenme_planlari',
+  'weekly_program_schedule',
+  'push_subscriptions',
+  'push_reminder_deliveries',
+  'schedule_notifications',
+  'schedule_attendance',
+  'workout_completions',
+  'trainers',
+  'schema_migrations',
+  'device_connections',
+  'health_metrics',
+  'workout_sessions'
+  ,'workout_session_steps'
+];
+
+async function migrate() {
+  try {
+    await client.connect();
+    for (const table of tables) {
+      await client.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+      await client.query(`DROP POLICY IF EXISTS "${table}_authenticated_access" ON ${table};`);
+      await client.query(`DROP POLICY IF EXISTS "${table}_admin_access" ON ${table};`);
+      await client.query(`DROP POLICY IF EXISTS "${table}_member_read" ON ${table};`);
+      if (table === 'uyeler') {
+        await client.query(`DROP POLICY IF EXISTS "uyeler_member_update" ON uyeler;`);
+      }
+      if (table === 'olcumler') {
+        await client.query(`DROP POLICY IF EXISTS "olcumler_member_insert" ON olcumler;`);
+      }
+      if (table === 'push_subscriptions') {
+        await client.query(`DROP POLICY IF EXISTS "push_subscriptions_member_access" ON push_subscriptions;`);
+      }
+      if (table === 'push_reminder_deliveries') {
+        await client.query(`DROP POLICY IF EXISTS "push_reminder_deliveries_member_read" ON push_reminder_deliveries;`);
+      }
+      if (table === 'schedule_notifications') {
+        await client.query(`DROP POLICY IF EXISTS "schedule_notifications_member_read" ON schedule_notifications;`);
+      }
+      if (table === 'schedule_attendance') {
+        await client.query(`DROP POLICY IF EXISTS "schedule_attendance_member_access" ON schedule_attendance;`);
+      }
+      if (table === 'workout_completions') {
+        await client.query(`DROP POLICY IF EXISTS "workout_completions_member_access" ON workout_completions;`);
+      }
+      if (['device_connections', 'health_metrics', 'workout_sessions', 'workout_session_steps'].includes(table)) {
+        await client.query(`DROP POLICY IF EXISTS "${table}_member_access" ON ${table};`);
+      }
+      await client.query(`
+        CREATE POLICY "${table}_admin_access"
+        ON ${table}
+        FOR ALL
+        TO authenticated
+        USING ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
+        WITH CHECK ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+      `);
+    }
+    await client.query(`
+      CREATE OR REPLACE FUNCTION public.assign_default_member_role()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      SECURITY DEFINER
+      SET search_path = auth, public
+      AS $$
+      BEGIN
+        IF COALESCE(NEW.raw_app_meta_data, '{}'::jsonb) ->> 'role' IS NULL THEN
+          NEW.raw_app_meta_data := jsonb_set(
+            COALESCE(NEW.raw_app_meta_data, '{}'::jsonb),
+            '{role}',
+            '"user"'::jsonb,
+            true
+          );
+        END IF;
+        RETURN NEW;
+      END;
+      $$;
+
+      DROP TRIGGER IF EXISTS assign_default_member_role ON auth.users;
+      CREATE TRIGGER assign_default_member_role
+      BEFORE INSERT ON auth.users
+      FOR EACH ROW
+      EXECUTE FUNCTION public.assign_default_member_role();
+
+      CREATE OR REPLACE FUNCTION public.create_member_profile_for_user()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      SECURITY DEFINER
+      SET search_path = auth, public
+      AS $$
+      BEGIN
+        INSERT INTO public.uyeler (id, ad_soyad, email, auth_user_id, brans, cinsiyet, kayit_tarihi)
+        VALUES (
+          floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint,
+          COALESCE(NEW.raw_user_meta_data ->> 'full_name', split_part(NEW.email, '@', 1)),
+          NEW.email,
+          NEW.id,
+          'Fitness',
+          'Belirtilmedi',
+          CURRENT_DATE
+        )
+        ON CONFLICT (auth_user_id) DO NOTHING;
+        RETURN NEW;
+      END;
+      $$;
+
+      DROP TRIGGER IF EXISTS create_member_profile_for_user ON auth.users;
+      CREATE TRIGGER create_member_profile_for_user
+      AFTER INSERT ON auth.users
+      FOR EACH ROW
+      WHEN (COALESCE(NEW.raw_app_meta_data ->> 'role', 'user') = 'user')
+      EXECUTE FUNCTION public.create_member_profile_for_user();
+
+      CREATE POLICY "uyeler_member_read"
+      ON uyeler
+      FOR SELECT
+      TO authenticated
+      USING (auth.uid() = auth_user_id);
+
+      CREATE POLICY "uyeler_member_update"
+      ON uyeler
+      FOR UPDATE
+      TO authenticated
+      USING (auth.uid() = auth_user_id)
+      WITH CHECK (auth.uid() = auth_user_id);
+
+      CREATE POLICY "olcumler_member_insert"
+      ON olcumler
+      FOR INSERT
+      TO authenticated
+      WITH CHECK (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = olcumler.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "olcumler_member_read"
+      ON olcumler
+      FOR SELECT
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = olcumler.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "antrenmanlar_member_read"
+      ON antrenmanlar
+      FOR SELECT
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = antrenmanlar.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "dokumanlar_member_read"
+      ON dokumanlar
+      FOR SELECT
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = dokumanlar.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "beslenme_planlari_member_read"
+      ON beslenme_planlari
+      FOR SELECT
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = beslenme_planlari.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "weekly_program_schedule_member_read"
+      ON weekly_program_schedule
+      FOR SELECT
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = weekly_program_schedule.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "push_subscriptions_member_access"
+      ON push_subscriptions
+      FOR ALL
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = push_subscriptions.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ))
+      WITH CHECK (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = push_subscriptions.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "push_reminder_deliveries_member_read"
+      ON push_reminder_deliveries
+      FOR SELECT
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM push_subscriptions
+        JOIN uyeler ON uyeler.id = push_subscriptions.member_id
+        WHERE push_subscriptions.id = push_reminder_deliveries.subscription_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "schedule_notifications_member_read"
+      ON schedule_notifications
+      FOR SELECT
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = schedule_notifications.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "schedule_attendance_member_access"
+      ON schedule_attendance
+      FOR ALL
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = schedule_attendance.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ))
+      WITH CHECK (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = schedule_attendance.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "workout_completions_member_access"
+      ON workout_completions
+      FOR ALL
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = workout_completions.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ))
+      WITH CHECK (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = workout_completions.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "device_connections_member_access"
+      ON device_connections
+      FOR ALL
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = device_connections.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ))
+      WITH CHECK (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = device_connections.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "health_metrics_member_access"
+      ON health_metrics
+      FOR ALL
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = health_metrics.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ))
+      WITH CHECK (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = health_metrics.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "workout_sessions_member_access"
+      ON workout_sessions
+      FOR ALL
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = workout_sessions.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ))
+      WITH CHECK (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = workout_sessions.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "workout_session_steps_member_access"
+      ON workout_session_steps
+      FOR ALL
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM workout_sessions
+        JOIN uyeler ON uyeler.id = workout_sessions.member_id
+        WHERE workout_sessions.id = workout_session_steps.workout_session_id
+          AND uyeler.auth_user_id = auth.uid()
+      ))
+      WITH CHECK (EXISTS (
+        SELECT 1 FROM workout_sessions
+        JOIN uyeler ON uyeler.id = workout_sessions.member_id
+        WHERE workout_sessions.id = workout_session_steps.workout_session_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+    `);
+
+    // Document files (private bucket "dokumanlar", one folder per member id):
+    // trainers manage all files, members may only read files in their own folder.
+    await client.query(`
+      DROP POLICY IF EXISTS "dokumanlar_storage_admin_access" ON storage.objects;
+      CREATE POLICY "dokumanlar_storage_admin_access"
+      ON storage.objects
+      FOR ALL
+      TO authenticated
+      USING (bucket_id = 'dokumanlar' AND (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
+      WITH CHECK (bucket_id = 'dokumanlar' AND (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+
+      DROP POLICY IF EXISTS "dokumanlar_storage_member_read" ON storage.objects;
+      CREATE POLICY "dokumanlar_storage_member_read"
+      ON storage.objects
+      FOR SELECT
+      TO authenticated
+      USING (bucket_id = 'dokumanlar' AND EXISTS (
+        SELECT 1 FROM public.uyeler u
+        WHERE u.auth_user_id = auth.uid()
+          AND u.id::text = (storage.foldername(name))[1]
+      ));
+    `);
+
+    const requiredPolicies = ['device_connections_member_access', 'health_metrics_member_access', 'workout_sessions_member_access'];
+    const policyResult = await client.query(
+      `SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND policyname = ANY($1::text[])`,
+      [requiredPolicies]
+    );
+    const foundPolicies = new Set(policyResult.rows.map(row => row.policyname));
+    const missingPolicies = requiredPolicies.filter(policy => !foundPolicies.has(policy));
+    if (missingPolicies.length > 0) {
+      throw new Error(`Missing required RLS policies: ${missingPolicies.join(', ')}`);
+    }
+
+    // Guard: policies created outside this script (e.g. in the dashboard) are never dropped above.
+    // On 2026-11-08 such policies exposed all client data to anyone holding the public key.
+    // Fail the deploy if any policy lets anonymous users in, or grants unconditional access.
+    const openPolicies = await client.query(`
+      SELECT schemaname, tablename, policyname, roles::text AS roles, cmd
+      FROM pg_policies
+      WHERE schemaname IN ('public', 'storage')
+        AND (roles && ARRAY['anon', 'public']::name[] OR qual = 'true' OR with_check = 'true')
+      ORDER BY schemaname, tablename, policyname
+    `);
+    if (openPolicies.rows.length > 0) {
+      const list = openPolicies.rows
+        .map(row => `${row.schemaname}.${row.tablename} "${row.policyname}" ${row.roles} ${row.cmd}`)
+        .join('\n  ');
+      throw new Error(`Unsafe RLS policies found (anonymous or unconditional access):\n  ${list}`);
+    }
+    const tablesWithoutRls = await client.query(`
+      SELECT c.relname
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relrowsecurity
+      ORDER BY c.relname
+    `);
+    if (tablesWithoutRls.rows.length > 0) {
+      throw new Error(`Tables without RLS: ${tablesWithoutRls.rows.map(row => row.relname).join(', ')}`);
+    }
+
+    await client.query(`NOTIFY pgrst, 'reload schema';`);
+    console.log('Admin-only RLS policies enabled.');
+  } catch (error) {
+    console.error('Auth migration failed:', error);
+    process.exitCode = 1;
+  } finally {
+    await client.end();
+  }
+}
+
+migrate();

@@ -1,0 +1,17 @@
+{
+    "name": "Zen Wellness Club",
+    "short_name": "Zen Wellness",
+    "description": "Zen Wellness Club yönetim paneli",
+    "start_url": "./",
+    "display": "standalone",
+    "background_color": "#050505",
+    "theme_color": "#050505",
+    "icons": [
+        {
+            "src": "zen-wellness-icon.png",
+            "sizes": "1024x1024",
+            "type": "image/png",
+            "purpose": "any"
+        }
+    ]
+}

@@ -1,0 +1,9 @@
+.DS_Store
+._*
+node_modules/
+.env
+.env.*
+*.log
+supabase/.temp/
+.gemini/
+.agent/

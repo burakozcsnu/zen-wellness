@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Zen Wellness Club</title>
+    <link rel="manifest" href="manifest.webmanifest?v=1.0">
+    <link rel="icon" type="image/png" href="zen-wellness-icon.png?v=1.0">
+
+    <!-- Apple PWA Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Zen Wellness Club">
+    <link rel="apple-touch-icon" href="zen-wellness-icon.png?v=1.0">
+
+    <link rel="stylesheet" href="style.css?v=1.9.17">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.105.1/dist/umd/supabase.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.1/dist/chart.umd.min.js"></script>
+    </head>
+
+    <body class="dark-theme">
+    <div id="version-tag"
+        style="position: fixed; bottom: 5px; left: 5px; font-size: 10px; color: var(--text-dim); z-index: 999999; pointer-events: none;">
+        v1.3.70 - Zen Wellness Club</div>
+    <div id="sync-status" class="sync-status" role="status" aria-live="polite">Bağlanıyor...</div>
+    <section id="brand-splash" class="brand-splash" aria-label="Zen Wellness Club giriş">
+        <button class="brand-splash-logo" type="button" aria-label="Rolleri göster" onclick="showPortalRoles()">
+            <img src="zen-wellness-logo.png?v=1.0" alt="Zen Wellness Club logosu">
+        </button>
+        <div class="brand-splash-copy">
+            <span>İyi yaşam, dengeli gelişim.</span>
+        </div>
+        <div id="portal-roles" class="portal-roles" hidden>
+            <button type="button" class="portal-role" onclick="enterPortal('user')">Kullanıcı</button>
+            <button type="button" class="portal-role portal-role-admin" onclick="enterPortal('admin')">Yönetici</button>
+        </div>
+        <div id="modal-auth" class="splash-auth-panel" aria-hidden="true">
+            <h2>Yönetici Girişi</h2>
+            <p class="auth-copy">Zen Wellness Club yönetim paneline devam etmek için giriş yapın.</p>
+            <form onsubmit="window.handleAdminLogin(event)">
+                <div id="auth-name-group" hidden>
+                    <label for="auth-name">Ad Soyad</label>
+                    <input id="auth-name" type="text" autocomplete="name">
+                </div>
+                <label id="auth-identity-label" for="auth-email">E-posta</label>
+                <input id="auth-email" type="email" autocomplete="username" required>
+                <label for="auth-password">Şifre</label>
+                <input id="auth-password" type="password" autocomplete="current-password" required>
+                <p id="auth-error" class="auth-error" role="alert"></p>
+                <button class="btn-primary" type="submit">Giriş Yap</button>
+            </form>
+            <button id="auth-signup-toggle" class="auth-secondary" type="button"
+                onclick="window.toggleMemberSignup()">Kayıt Ol</button>
+            <button id="auth-reset-button" class="auth-secondary" type="button"
+                onclick="window.requestPasswordReset()">Şifremi Unuttum</button>
+            <p id="auth-signup-copy" class="auth-signup-copy" hidden>
+                Kayıt sonrası e-posta doğrulaması istenebilir.
+            </p>
+        </div>
+    </section>
+    <section id="member-portal" class="member-portal" hidden>
+        <header class="member-portal-header">
+            <div class="member-portal-brand">
+                <img src="zen-wellness-logo.png?v=1.0" alt="Zen Wellness Club">
+                <span>Wellness Club</span>
+            </div>
+            <button type="button" class="btn-logout" onclick="window.handleAdminLogout()">Çıkış Yap</button>
+            <button type="button" class="auth-secondary" onclick="window.exportMyData()">Verilerimi Dışa Aktar</button>
+        </header>
+        <main class="member-portal-content">
+            <div id="member-portal-status" class="sync-status" role="status" aria-live="polite"></div>
+            <nav class="member-portal-tabs" aria-label="Danışan paneli bölümleri">
+                <button type="button" class="active" data-portal-tab="overview"
+                    onclick="window.selectMemberPortalTab('overview')">Özet</button>
+                <button type="button" data-portal-tab="schedule"
+                    onclick="window.selectMemberPortalTab('schedule')">Programım</button>
+                <button type="button" data-portal-tab="notifications"
+                    onclick="window.selectMemberPortalTab('notifications')">Bildirimler</button>
+                <button type="button" data-portal-tab="measurements"
+                    onclick="window.selectMemberPortalTab('measurements')">Ölçümler</button>
+                <button type="button" data-portal-tab="workouts"
+                    onclick="window.selectMemberPortalTab('workouts')">Antrenman</button>
+                <button type="button" data-portal-tab="nutrition"
+                    onclick="window.selectMemberPortalTab('nutrition')">Beslenme</button>
+                <button type="button" data-portal-tab="documents"
+                    onclick="window.selectMemberPortalTab('documents')">Belgeler</button>
+            </nav>
+            <div id="member-portal-content"></div>
+        </main>
+    </section>
+    <div id="member-assessment" class="member-assessment" hidden aria-hidden="true">
+        <div class="member-assessment-card">
+            <div class="member-assessment-progress">
+                <span id="assessment-step-label">1 / 11</span>
+                <span id="assessment-progress-value">0%</span>
+            </div>
+            <div class="member-assessment-progress-bar">
+                <span id="assessment-progress-bar"></span>
+            </div>
+            <div id="assessment-question"></div>
+            <div class="member-assessment-actions">
+                <button id="assessment-back" class="btn-secondary" type="button"
+                    onclick="window.previousAssessmentQuestion()">Geri</button>
+                <button id="assessment-next" class="btn-primary" type="button"
+                    onclick="window.nextAssessmentQuestion()">Devam</button>
+            </div>
+            <p id="assessment-error" class="auth-error" role="alert"></p>
+        </div>
+    </div>
+    <div id="app-wrapper" class="app-wrapper">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <img class="app-logo" src="zen-wellness-logo.png?v=1.0" alt="Zen Wellness Club">
+                <span class="logo-wordmark">Wellness Club</span>
+            </div>
+            <nav>
+                <button onclick="nav('members-view')" class="nav-btn active" id="btn-members">👥
+                    <span>Üyeler</span></button>
+                <button onclick="nav('programs-view')" class="nav-btn" id="btn-programs">📋 <span>Şablon &
+                        Kütüphane</span></button>
+                <button onclick="nav('nutrition-view')" class="nav-btn" id="btn-nutrition">🍏 <span>Beslenme &
+                        Supplement</span></button>
+                <button onclick="startWeeklySchedule()" class="nav-btn" id="btn-schedule">🗓️ <span>Haftalık Program
+                        Çizelgesi</span></button>
+                <button onclick="startSurvey()" class="nav-btn" id="btn-survey">🎯 <span>Akıllı
+                        Değerlendirme</span></button>
+            </nav>
+            <div class="sidebar-actions">
+                <button onclick="globalUndo()" class="btn-undo">↩ <span>Geri Al</span></button>
+                <button onclick="window.handleAdminLogout()" class="btn-logout">↪ <span>Çıkış Yap</span></button>
+            </div>
+        </aside>
+        <button class="drawer-overlay" type="button" aria-label="Menüyü kapat" onclick="toggleMobileMenu(false)"></button>
+
+        <main class="content">
+            <div class="mobile-brand">
+                <button class="mobile-logo" type="button" aria-label="Ana menüyü aç" aria-expanded="false"
+                    onclick="toggleMobileMenu()">
+                    <span class="mobile-logo-mark">
+                        <img class="app-logo" src="zen-wellness-logo.png?v=1.0" alt="Zen Wellness Club">
+                    </span>
+                    <span class="mobile-wordmark">Wellness Club</span>
+                </button>
+            </div>
+            <!-- GLOBAL SEARCH BAR -->
+            <div class="global-search-bar">
+                <button class="btn-back" onclick="goBack()" style="min-width: 80px;">← Geri</button>
+                <div class="search-main-area">
+                    <input type="text" id="global-search-keyword"
+                        placeholder="Sistemde ara (Üye, Program, Egzersiz, Besin)..." oninput="performGlobalSearch()">
+                    <button class="btn-filter-toggle" onclick="toggleSearchFilters()">⚙️ Filtreler</button>
+                    <div id="search-filters-dropdown" class="filters-dropdown">
+                        <div class="filter-group">
+                            <label>Kategoriler</label>
+                            <div class="checkbox-group">
+                                <label><input type="checkbox" id="f-cat-members" onchange="performGlobalSearch()"
+                                        checked> Üyeler</label>
+                                <label><input type="checkbox" id="f-cat-progs" onchange="performGlobalSearch()" checked>
+                                    Şablonlar</label>
+                                <label><input type="checkbox" id="f-cat-workouts" onchange="performGlobalSearch()"
+                                        checked> Antrenmanlar</label>
+                                <label><input type="checkbox" id="f-cat-exercises" onchange="performGlobalSearch()"
+                                        checked> Egzersizler</label>
+                                <label><input type="checkbox" id="f-cat-foods" onchange="performGlobalSearch()" checked>
+                                    Besinler</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="global-actions">
+                    <button class="btn-secondary" onclick="window.location.reload(true)"
+                        style="margin-right: 0.5rem;">🔄 Yenile</button>
+                </div>
+            </div>
+
+            <!-- VIEW: Üyeler -->
+            <section id="members-view" class="view active">
+                <div class="view-header">
+                    <h1>👥 Üyeler</h1>
+                </div>
+                <div id="member-overview" class="member-overview" aria-label="Üye özeti"></div>
+                <div class="member-list-heading">
+                    <div>
+                        <h2>Danışanlar</h2>
+                        <p>Profil açmak için bir danışan seçin.</p>
+                    </div>
+                </div>
+                <div id="members-grid" class="grid"></div>
+            </section>
+
+            <!-- VIEW: Akıllı Değerlendirme -->
+            <section id="assessment-view" class="view">
+                <div class="view-header">
+                    <h1>🎯 Akıllı Değerlendirme</h1>
+                </div>
+                <div class="section-intro">
+                    <div>
+                        <span class="eyebrow">DANIŞAN İÇGÖRÜLERİ</span>
+                        <h2>Üyelerin onboarding yanıtları</h2>
+                    </div>
+                    <p>Yanıtlar danışan kartına ve ilk test ölçümüne otomatik aktarılır.</p>
+                </div>
+                <div id="assessment-admin-list" class="grid"></div>
+            </section>
+
+            <section id="schedule-view" class="view">
+                <div class="view-header">
+                    <h1>🗓️ Haftalık Program Çizelgesi</h1>
+                    <button class="btn-primary" type="button" onclick="window.openScheduleEditor()">+ Programa ekle</button>
+                </div>
+                <div class="section-intro">
+                    <div>
+                        <span class="eyebrow">HAFTALIK PLAN</span>
+                        <h2>Üye seansları ve branşlar</h2>
+                    </div>
+                    <p>Bir seansa tıklayarak gün, saat, üye ve branş bilgilerini güncelleyebilirsiniz.</p>
+                </div>
+                <div class="schedule-filters" aria-label="Çizelge filtreleri">
+                    <label>Üye
+                        <select id="schedule-filter-member" onchange="window.applyScheduleFilters()">
+                            <option value="">Tümü</option>
+                        </select>
+                    </label>
+                    <label>Eğitmen
+                        <select id="schedule-filter-trainer" onchange="window.applyScheduleFilters()">
+                            <option value="">Tümü</option>
+                        </select>
+                    </label>
+                    <label>Branş
+                        <select id="schedule-filter-branch" onchange="window.applyScheduleFilters()">
+                            <option value="">Tümü</option>
+                        </select>
+                    </label>
+                </div>
+                <div id="weekly-schedule-grid" class="weekly-schedule-grid"></div>
+            </section>
+
+            <!-- VIEW: Arama Sonuçları -->
+            <section id="search-results-view" class="view">
+                <div class="view-header">
+                    <h1>🔍 Arama Sonuçları</h1>
+                </div>
+                <div id="search-results-content"></div>
+            </section>
+
+            <!-- VIEW: Üye Profili -->
+            <section id="profile-view" class="view">
+                <div class="view-header">
+                    <div class="profile-heading">
+                        <span class="eyebrow">DANIŞAN PROFİLİ</span>
+                        <h1 id="prof-name">Üye Profili</h1>
+                        <p id="prof-meta">Profil detaylarını ve gelişimi yönetin.</p>
+                    </div>
+                    <button class="btn-secondary profile-edit-btn" onclick="window.editActiveMember()">Profili düzenle</button>
+                </div>
+
+                <nav class="profile-tabs-nav">
+                    <button onclick="tab('analytics')" class="tab-btn active" id="btn-tab-analytics">📈 Gelişim
+                        Dashboard</button>
+                    <button onclick="tab('measurements')" class="tab-btn" id="btn-tab-measurements">📏 Ölçümler</button>
+                    <button onclick="tab('cardio')" class="tab-btn" id="btn-tab-cardio">🫀 Testler</button>
+                    <button onclick="tab('workouts')" class="tab-btn" id="btn-tab-workouts">🏋️ Antrenmanlar</button>
+                    <button onclick="tab('nutrition')" class="tab-btn" id="btn-tab-nutrition">🍏 Beslenme</button>
+                    <button onclick="tab('documents')" class="tab-btn" id="btn-tab-documents">📁 Dökümanlar</button>
+                </nav>
+
+                <div class="profile-content-wrapper">
+                    <!-- TAB: Gelişim Dashboard -->
+                    <div id="tab-analytics" class="tab-content active">
+                        <div class="section-intro" style="display:flex; justify-content:space-between; align-items:flex-start;">
+                            <div>
+                                <span class="eyebrow">GENEL BAKIŞ</span>
+                                <h2>Gelişim özeti</h2>
+                                <p style="margin-top:0.2rem;">Son ölçüm ve antrenman verilerini tek bakışta takip edin.</p>
+                            </div>
+                            <button class="btn-secondary" onclick="window.generateMemberReport()" style="font-size:0.8rem; display:flex; align-items:center; gap:0.4rem;">
+                                <span>📤</span> Raporu Kopyala
+                            </button>
+                        </div>
+                        <div class="dashboard-stats-grid"
+                            style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));">
+                            <div class="stat-card" style="background: rgba(0, 242, 254, 0.05);">
+                                <span>Son Ağırlık</span>
+                                <h2 id="stat-weight">--</h2>
+                            </div>
+                            <div class="stat-card" style="background: rgba(113, 46, 255, 0.05);">
+                                <span>Yağ Oranı %</span>
+                                <h2 id="stat-fat">--</h2>
+                            </div>
+                            <div class="stat-card" style="background: rgba(255, 255, 255, 0.02);">
+                                <span>Toplam Antrenman</span>
+                                <h2 id="stat-workouts">--</h2>
+                            </div>
+                            <div class="stat-card" style="background: rgba(255, 100, 100, 0.05);">
+                                <span>Son Kalori</span>
+                                <h2 id="stat-cals">--</h2>
+                            </div>
+                        </div>
+                        <div class="analytics-container">
+                            <div class="section-intro chart-intro">
+                                <div>
+                                    <span class="eyebrow">İLERLEME</span>
+                                    <h2>Gelişim grafiği</h2>
+                                </div>
+                                <p id="chart-description">Bir parametre seçerek değişimi inceleyin.</p>
+                            </div>
+                            <div class="analytics-sidebar">
+                                <h3>Parametreler</h3>
+                                                                <select id="chart-cat" onchange="loadMetricList()">
+                                    <option value="olcum">Vücut Ölçümleri</option>
+                                                                    <option value="testler">Test Değerleri</option>
+                                                                    <option value="antrenman">Egzersiz Performansı</option>
+                                                                    <option value="beslenme">Beslenme (Makrolar)</option>
+                                                                </select>
+                                <select id="chart-sub-cat" onchange="updateChart()"></select>
+                            </div>
+                            <div class="chart-main"><canvas id="mainChart"></canvas></div>
+                        </div>
+                    </div>
+
+                    <!-- TAB: Ölçümler -->
+                    <div id="tab-measurements" class="tab-content">
+                        <div
+                            style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+                            <h3>📊 Ölçüm Geçmişi</h3>
+                            <button class="btn-primary" onclick="window.openMeasurementModal()">+ Yeni Ölçüm
+                                Ekle</button>
+                        </div>
+                        <div id="measurement-summary" class="measurement-summary"></div>
+                        <div id="m-history-tabs" class="history-tabs"></div>
+                    </div>
+                    <!-- TAB: Testler -->
+                    <div id="tab-cardio" class="tab-content">
+                        <div
+                            style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+                            <h3>🫀 Test Geçmişi</h3>
+                            <button class="btn-primary" onclick="window.openCardioModal()">+ Yeni Test
+                                Ekle</button>
+                        </div>
+                        <div id="c-history-tabs" class="history-tabs"></div>
+                    </div>
+
+                    <!-- TAB: Antrenmanlar -->
+                    <div id="tab-workouts" class="tab-content">
+                        <div class="workout-timer-panel" style="margin-bottom: 1rem;">
+                            <div id="timer-val" class="timer-display">00:00:00</div>
+                            <div style="display:flex; gap:1rem;">
+                                <button id="btn-timer-toggle" class="btn-primary" onclick="toggleWorkoutTimer()">▶
+                                    Başlat</button>
+                                <button id="btn-timer-reset" class="btn-secondary" onclick="resetWorkoutTimer()">🔄
+                                    Sıfırla</button>
+                            </div>
+                        </div>
+                        <div
+                            style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+                            <h3>📜 Antrenman Geçmişi</h3>
+                            <button class="btn-primary" onclick="window.openWorkoutModal()">+ Yeni Antrenman
+                                Ekle</button>
+                        </div>
+                        <div id="workout-history-tree" class="history-tree"></div>
+                    </div>
+
+                    <!-- TAB: Beslenme -->
+                    <div id="tab-nutrition" class="tab-content">
+                        <div
+                            style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+                            <h3>📋 Beslenme Geçmişi</h3>
+                            <button class="btn-primary" onclick="window.openDietModal()">+ Yeni Beslenme Planı</button>
+                        </div>
+                        <div id="diet-history-tree" class="history-tree"></div>
+                    </div>
+
+                    <!-- TAB: Dökümanlar -->
+                    <div id="tab-documents" class="tab-content">
+                        <div class="pro-form">
+                            <h3>📄 Döküman Yükle</h3>
+                            <form onsubmit="uploadDocument(event)" class="grid-form">
+                                <input type="text" id="doc-name" placeholder="Döküman Adı" required>
+                                <select id="doc-type">
+                                    <option value="Kan Testi">Kan Testi</option>
+                                    <option value="Sözleşme">Sözleşme</option>
+                                    <option value="Diğer">Diğer</option>
+                                </select>
+                                <input type="file" id="doc-file" accept="application/pdf" required>
+                                <button type="submit" class="btn-primary">Yükle</button>
+                            </form>
+                        </div>
+                        <div class="accordion">
+                            <div class="acc-header" onclick="toggleAcc('doc-accordion-body')">
+                                <h3>📂 Döküman Arşivi</h3>
+                                <span class="chevron">▼</span>
+                            </div>
+                            <div id="doc-accordion-body" class="acc-body">
+                                <div id="doc-list" class="grid mt-1"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW: Şablon Kütüphanesi -->
+            <section id="programs-view" class="view">
+                <div class="view-header">
+                    <h1>📋 Şablon & Kütüphane</h1>
+                    <div class="header-btns">
+                        <button class="btn-secondary" onclick="openModal('modal-new-exercise')">✨ Yeni Egzersiz</button>
+                        <button class="btn-primary" onclick="openModal('modal-program')">+ Yeni Şablon</button>
+                    </div>
+                </div>
+                <div id="programs-by-branch"></div>
+                <h2 class="mt-1">📚 Tüm Egzersizler</h2>
+                <div class="exercise-filters grid"
+                    style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.5rem; margin-bottom: 1rem;">
+                    <select id="filter-ex-bodypart" onchange="window.renderExercises()" class="ex-select">
+                        <option value="">Tüm Vücut Bölümleri</option>
+                        <option value="Üst Ekstremite">Üst Ekstremite</option>
+                        <option value="Alt Ekstremite">Alt Ekstremite</option>
+                        <option value="Tüm Vücut">Tüm Vücut</option>
+                    </select>
+                    <select id="filter-ex-classification" onchange="window.renderExercises()" class="ex-select">
+                        <option value="">Tüm Sınıflandırmalar</option>
+                        <option value="Alt Ekstremite">Alt Ekstremite</option>
+                        <option value="Üst Ekstremite">Üst Ekstremite</option>
+                        <option value="Anterior Chain">Anterior Chain</option>
+                        <option value="Posterior Chain">Posterior Chain</option>
+                        <option value="Bölgesel">Bölgesel</option>
+                        <option value="Compound">Compound</option>
+                        <option value="Fasyal">Fasyal</option>
+                    </select>
+                    <select id="filter-ex-muscle" onchange="window.renderExercises()" class="ex-select">
+                        <option value="">Tüm Kas Grupları</option>
+                        <option value="Göğüs">Göğüs</option>
+                        <option value="Sırt">Sırt</option>
+                        <option value="Omuz">Omuz</option>
+                        <option value="Biceps">Biceps</option>
+                        <option value="Triceps">Triceps</option>
+                        <option value="Ön Kol">Ön Kol</option>
+                        <option value="Glute">Glute</option>
+                        <option value="Hamstring">Hamstring</option>
+                        <option value="Quad">Quad</option>
+                        <option value="Calf">Calf</option>
+                        <option value="Core">Core</option>
+                    </select>
+                    <select id="filter-ex-branch" onchange="window.renderExercises()" class="ex-select">
+                        <option value="">Tüm Branşlar</option>
+                        <option value="Fitness">Fitness</option>
+                        <option value="Fonksiyonel">Fonksiyonel</option>
+                        <option value="Calisthenics">Calisthenics</option>
+                        <option value="Plyometrics">Plyometrics</option>
+                        <option value="Mobility">Mobility</option>
+                        <option value="Corrective">Corrective</option>
+                        <option value="Karate">Karate</option>
+                        <option value="Kickboks">Kickboks</option>
+                        <option value="Basketbol">Basketbol</option>
+                        <option value="Yoga">Yoga</option>
+                    </select>
+                    <select id="filter-ex-yoga-style" onchange="window.renderExercises()" class="ex-select">
+                        <option value="">Tüm Yoga Stilleri</option>
+                        <option value="Hatha">Hatha</option>
+                        <option value="Ashtanga">Ashtanga</option>
+                        <option value="Vinyasa">Vinyasa</option>
+                        <option value="Yin">Yin</option>
+                        <option value="Iyengar">Iyengar</option>
+                        <option value="Restorative">Restorative</option>
+                        <option value="Kundalini">Kundalini</option>
+                    </select>
+                    <select id="filter-ex-karate-drill" onchange="window.renderExercises()" class="ex-select">
+                        <option value="">Tüm Karate Drilleri</option>
+                        <option value="Kihon">Kihon</option>
+                        <option value="Kata">Kata</option>
+                        <option value="Kumite">Kumite</option>
+                    </select>
+                    <select id="filter-ex-karate-rank" onchange="window.renderExercises()" class="ex-select">
+                        <option value="">Tüm Karate Seviyeleri</option>
+                        <option value="6. Kyu (Sarı)">6. Kyu (Sarı)</option>
+                        <option value="5. Kyu">5. Kyu</option>
+                        <option value="4. Kyu">4. Kyu</option>
+                        <option value="3. Kyu">3. Kyu</option>
+                        <option value="2. Kyu">2. Kyu</option>
+                        <option value="1. Kyu">1. Kyu</option>
+                        <option value="1. Dan">1. Dan</option>
+                        <option value="2. Dan">2. Dan</option>
+                    </select>
+                    <select id="filter-ex-karate-style" onchange="window.renderExercises()" class="ex-select">
+                        <option value="">Tüm Karate Stilleri</option>
+                        <option value="Shotokan">Shotokan</option>
+                    </select>
+                    <select id="filter-ex-equipment" onchange="window.renderExercises()" class="ex-select">
+                        <option value="">Tüm Ekipmanlar</option>
+                        <option value="Vücut ağırlığı">Vücut ağırlığı</option>
+                        <option value="Olympic bar">Olympic bar</option>
+                        <option value="Dumbbells">Dumbbells</option>
+                        <option value="Kettlebells">Kettlebells</option>
+                        <option value="Resistance bands">Resistance bands</option>
+                        <option value="Medicine balls">Medicine balls</option>
+                        <option value="Landmine">Landmine</option>
+                        <option value="Jump box">Jump box</option>
+                        <option value="Punching bag">Punching bag</option>
+                        <option value="Mitts and strike pads">Mitts and strike pads</option>
+                        <option value="Yoga matı">Yoga matı</option>
+                        <option value="Cones">Cones</option>
+                        <option value="Weighted vest">Weighted vest</option>
+                        <option value="Parallettes">Parallettes</option>
+                    </select>
+                </div>
+                <div id="exercises-grid"></div>
+            </section>
+
+            <!-- VIEW: Beslenme Kütüphanesi -->
+            <section id="nutrition-view" class="view">
+                <div class="view-header">
+                    <h1>🍏 Beslenme & Supplement Kütüphanesi</h1>
+                    <div class="header-btns">
+                        <button class="btn-primary" onclick="openModal('modal-new-food')">+ Yeni Besin Ekle</button>
+                    </div>
+                </div>
+                <div class="exercise-filters grid"
+                    style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.5rem; margin-bottom: 1rem;">
+                    <select id="filter-food-type" onchange="window.renderFoods()" class="ex-select">
+                        <option value="">Tüm Tipler</option>
+                        <option value="Yemek">Yemek</option>
+                        <option value="Supplement">Supplement</option>
+                        <option value="İçecek">İçecek</option>
+                    </select>
+                </div>
+                <div id="foods-grid"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- MODALS -->
+    <div id="modal-program" class="modal">
+        <div class="modal-content wide"><span class="close" onclick="closeModal('modal-program')">&times;</span>
+            <h2>Şablon Üret</h2>
+            <form onsubmit="handleProgramSubmit(event)"><input type="hidden" id="edit-program-id"><input type="text"
+                    id="p-name" placeholder="Şablon Adı" required>
+                <div id="p-exercise-rows"></div><button type="button" onclick="addExerciseRowToTemplate()">+ Egzersiz
+                    Ekle</button><button type="submit" class="btn-primary w-full">Kaydet</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: Yeni/Düzenle Egzersiz (Unified Manager) -->
+    <div id="modal-new-exercise" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('modal-new-exercise')">&times;</span>
+            <h2 id="ex-modal-title">Egzersiz Yönetimi</h2>
+            <form onsubmit="saveNewExercise(event)">
+                <input type="hidden" id="edit-ex-id">
+                <div class="form-group">
+                    <label>Egzersiz Adı</label>
+                    <input type="text" id="new-ex-name" placeholder="Egzersiz Adı" required>
+                </div>
+                <div class="form-group mt-1">
+                    <label>Vücut Bölümü</label>
+                    <select id="group-body-part" onchange="toggleBodyPartOptions(this.value)">
+                        <option value="">Seçiniz (Opsiyonel)...</option>
+                        <option value="Üst Ekstremite">Üst Ekstremite</option>
+                        <option value="Alt Ekstremite">Alt Ekstremite</option>
+                        <option value="Tüm Vücut">Tüm Vücut</option>
+                    </select>
+                </div>
+                <div id="group-muscles-container" class="form-group mt-1" style="display:none;">
+                    <label>Kas Grupları</label>
+                    <div id="muscles-checkboxes" class="checkbox-grid"></div>
+                </div>
+                <div class="form-group mt-1">
+                    <label>Ekipman</label>
+                    <input type="text" id="new-ex-equipment" placeholder="Örn. Dumbbells, resistance bands">
+                </div>
+                <div class="form-group mt-1">
+                    <label>Seviye</label>
+                    <select id="new-ex-level">
+                        <option value="Başlangıç">Başlangıç</option>
+                        <option value="Orta">Orta</option>
+                        <option value="İleri">İleri</option>
+                    </select>
+                </div>
+                <div class="form-group mt-1">
+                    <label>Branş</label>
+                    <select id="new-ex-branch">
+                        <option value="Fitness">Fitness</option>
+                        <option value="Fonksiyonel">Fonksiyonel</option>
+                        <option value="Calisthenics">Calisthenics</option>
+                        <option value="Plyometrics">Plyometrics</option>
+                        <option value="Mobility">Mobility</option>
+                        <option value="Corrective">Corrective</option>
+                        <option value="Karate">Karate</option>
+                        <option value="Kickboks">Kickboks</option>
+                        <option value="Basketbol">Basketbol</option>
+                        <option value="Yoga">Yoga</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn-primary w-full mt-1">Kaydet</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: Yeni Antrenman (Workout) -->
+    <div id="modal-workout" class="modal">
+        <div class="modal-content wide">
+            <span class="close" onclick="closeModal('modal-workout')">&times;</span>
+            <h2 id="w-modal-title">Yeni Antrenman Kaydet</h2>
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Hazır
+                    Şablon Yükle</label>
+                <select id="form-template-loader" onchange="loadTemplateToForm(this.value)" class="w-full"></select>
+            </div>
+            <form onsubmit="saveWorkout(event)">
+                <div class="grid" style="grid-template-columns: 1fr 2fr; gap: 0.5rem; margin-bottom: 1rem;">
+                    <div class="form-group">
+                        <label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Tarih</label>
+                        <input type="date" id="w-date" required class="w-full">
+                    </div>
+                    <div class="form-group">
+                        <label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Antrenman
+                            Adı</label>
+                        <input type="text" id="w-name" required class="w-full">
+                    </div>
+                </div>
+                <div class="grid" style="grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
+                    <div class="form-group">
+                        <label for="w-rpe">RPE</label>
+                        <input type="number" id="w-rpe" min="1" max="10" step="1" placeholder="1-10">
+                    </div>
+                    <div class="form-group">
+                        <label for="w-tempo">Tempo</label>
+                        <input type="text" id="w-tempo" placeholder="Örn. 3010">
+                    </div>
+                    <div class="form-group">
+                        <label for="w-rest">Dinlenme (sn)</label>
+                        <input type="number" id="w-rest" min="0" step="5" placeholder="60">
+                    </div>
+                </div>
+                <div id="set-rows-container" style="max-height: 55vh; overflow-y: auto; overflow-x: hidden; padding-right: 5px;"></div>
+                <button type="button" onclick="addSetRowToWorkout()" class="btn-secondary mt-1">+ Egzersiz Ekle</button>
+                <button type="submit" class="btn-primary w-full mt-1">Antrenmanı Kaydet</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: Yeni/Düzenle Besin -->
+    <div id="modal-new-food" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('modal-new-food')">&times;</span>
+            <h2 id="f-modal-title">Besin Yönetimi</h2>
+            <form onsubmit="saveNewFood(event)">
+                <input type="hidden" id="edit-f-id">
+                <div class="form-group">
+                    <label style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Besin
+                        Adı</label>
+                    <input type="text" id="new-f-name" class="w-full" required>
+                </div>
+                <div class="form-group mt-1">
+                    <label
+                        style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Tip</label>
+                    <select id="new-f-type" class="w-full" required>
+                        <option value="Yemek">Yemek</option>
+                        <option value="Supplement">Supplement</option>
+                        <option value="İçecek">İçecek</option>
+                    </select>
+                </div>
+                <div class="form-group mt-1">
+                    <label
+                        style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Porsiyon
+                        (Örn: 100g, 1 Ölçek)</label>
+                    <input type="text" id="new-f-portion" class="w-full" required>
+                </div>
+                <div class="grid mt-1" style="grid-template-columns: 1fr 1fr; gap:0.5rem;">
+                    <div class="form-group">
+                        <label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Kalori
+                            (kcal)</label>
+                        <input type="number" step="0.1" id="new-f-cal" class="w-full" required>
+                    </div>
+                    <div class="form-group">
+                        <label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Protein
+                            (g)</label>
+                        <input type="number" step="0.1" id="new-f-pro" class="w-full" required>
+                    </div>
+                    <div class="form-group">
+                        <label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Karbonhidrat
+                            (g)</label>
+                        <input type="number" step="0.1" id="new-f-carb" class="w-full" required>
+                    </div>
+                    <div class="form-group">
+                        <label style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Yağ
+                            (g)</label>
+                        <input type="number" step="0.1" id="new-f-fat" class="w-full" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn-primary w-full mt-1">Kaydet</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: Yeni Beslenme Planı -->
+    <div id="modal-diet" class="modal">
+        <div class="modal-content wide">
+            <span class="close" onclick="closeModal('modal-diet')">&times;</span>
+            <h2 id="d-modal-title">Yeni Beslenme Planı</h2>
+            <form onsubmit="saveDietPlan(event)">
+                <div class="grid" style="grid-template-columns: 1fr 2fr; gap: 0.5rem; margin-bottom: 1rem;">
+                    <div class="form-group">
+                        <label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Tarih</label>
+                        <input type="date" id="d-date" required class="w-full">
+                    </div>
+                    <div class="form-group">
+                        <label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Plan
+                            Adı (Örn: Bulk Dönemi 1)</label>
+                        <input type="text" id="d-name" required class="w-full">
+                    </div>
+                </div>
+                <div id="meal-rows-container"></div>
+                <button type="button" onclick="addMealRowToDiet()" class="btn-secondary mt-1">+ Öğün/Supplement
+                    Ekle</button>
+                <div style="margin-top: 1rem; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: 8px;">
+                    <strong style="color:var(--accent)">Toplam Makrolar:</strong> <br>
+                    🔥 <span id="diet-total-cals">0</span> kcal | P: <span id="diet-total-pro">0</span>g | C: <span
+                        id="diet-total-carb">0</span>g | Y: <span id="diet-total-fat">0</span>g
+                </div>
+                <button type="submit" class="btn-primary w-full mt-1">Planı Kaydet</button>
+            </form>
+        </div>
+    </div>
+
+    
+    <!-- MODAL: Kardiyo Testi -->
+    <div id="modal-cardio" class="modal">
+        <div class="modal-content wide">
+            <span class="close" onclick="closeModal('modal-cardio')">&times;</span>
+            <h2 id="c-modal-title">Kardiyo & Metabolizma Testi</h2>
+            <form onsubmit="saveCardioTest(event)">
+                <input type="hidden" id="c-id">
+                <div class="form-group">
+                    <label style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Tarih</label>
+                    <input type="date" id="c-date" required class="w-full">
+                </div>
+                
+                <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;">
+                    <div style="margin-bottom: 1rem; font-size: 0.85rem; color: var(--text-dim);">
+                        <p style="margin-bottom: 0.5rem;"><b>RHR (Dinlenik Nabız):</b> Sabah uyanır uyanmaz 1 dakika boyunca nabzı sayın.</p>
+                        <p style="margin-bottom: 0.5rem;"><b>VO2 Max (Queen's College Step Testi):</b> Üye 41.3 cm yüksekliğindeki bir basamağa metronom eşliğinde 3 dakika boyunca inip çıkar (Erkekler: 24 adım/dk, Kadınlar: 22 adım/dk). Test bittikten hemen sonra 5 saniye bekleyip 15 saniyelik nabız sayılır ve 4 ile çarpılarak test sonu nabzı (bpm) girilir.</p>
+                        <p>MHR, HRR ve BMR sistem tarafından hesaplanır.</p>
+                    </div>
+
+                    <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                        <div class="form-group">
+                            <label style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Kilo (kg) (Gerekli)</label>
+                            <input type="number" step="0.1" id="c-weight" class="w-full" required oninput="window.calculateAdvancedMetrics()">
+                        </div>
+                        <div class="form-group">
+                            <label style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Boy (cm) (Gerekli)</label>
+                            <input type="number" step="0.1" id="c-height" class="w-full" required oninput="window.calculateAdvancedMetrics()">
+                        </div>
+                        <div class="form-group">
+                            <label style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Yaş</label>
+                            <input type="number" id="c-age" class="w-full" placeholder="Örn: 30" oninput="window.calculateAdvancedMetrics()">
+                        </div>
+                        <div class="form-group">
+                            <label style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">RHR (Dinlenik Nabız - bpm)</label>
+                            <input type="number" id="c-rhr" class="w-full" placeholder="Örn: 60" oninput="window.calculateAdvancedMetrics()">
+                        </div>
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Queen's Step Testi (Test Sonu Nabız - bpm)</label>
+                            <input type="number" id="c-cooper" class="w-full" placeholder="Örn: 156" oninput="window.calculateAdvancedMetrics()">
+                        </div>
+                        
+                        <!-- Auto Calc Fields -->
+                        <div class="form-group">
+                            <label style="display:block; margin-bottom:0.2rem; color:var(--accent); font-size:0.8rem;">BMR (Bazal Metabolizma)</label>
+                            <input type="number" id="c-bmr" class="w-full" readonly style="background: rgba(255,255,255,0.05);">
+                        </div>
+                        <div class="form-group">
+                            <label style="display:block; margin-bottom:0.2rem; color:var(--accent); font-size:0.8rem;">MHR (Maks Nabız)</label>
+                            <input type="number" id="c-mhr" class="w-full" readonly style="background: rgba(255,255,255,0.05);">
+                        </div>
+                        <div class="form-group">
+                            <label style="display:block; margin-bottom:0.2rem; color:var(--accent); font-size:0.8rem;">HRR (Nabız Rezervi)</label>
+                            <input type="number" id="c-hrr" class="w-full" readonly style="background: rgba(255,255,255,0.05);">
+                        </div>
+                        <div class="form-group">
+                            <label style="display:block; margin-bottom:0.2rem; color:var(--accent); font-size:0.8rem;">VO2 Max (ml/kg/min)</label>
+                            <input type="number" step="0.1" id="c-vo2max" class="w-full" readonly style="background: rgba(255,255,255,0.05);">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-btns mt-1">
+                    <button type="submit" class="btn-primary w-full">Testi Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: Yeni/Düzenle Ölçüm -->
+    <div id="modal-measurement" class="modal">
+        <div class="modal-content wide">
+            <span class="close" onclick="closeModal('modal-measurement')">&times;</span>
+            <h2 id="m-modal-title">Ölçüm Yönetimi</h2>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+                <p style="color:var(--text-dim); font-size:0.9rem; margin:0;">Yeni ölçüm verilerini girin.</p>
+                <button type="button" class="btn-secondary" onclick="window.loadPreviousMeasurement()" style="font-size:0.8rem; padding:0.4rem 0.8rem;">🔄 Son Ölçümü Yükle</button>
+            </div>
+            <form onsubmit="saveMeasurement(event)">
+                <input type="hidden" id="m-id">
+                <div class="form-group">
+                    <label
+                        style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Tarih</label>
+                    <input type="date" id="m-date" required class="w-full">
+                </div>
+                <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 1rem;">
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Kilo
+                            (kg)</label><input type="number" step="0.1" id="m-weight" required class="w-full" oninput="window.calculateFatPercentage()"></div>
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Boy
+                            (cm)</label><input type="number" step="0.1" id="m-height-measurement" class="w-full" oninput="window.calculateFatPercentage()"></div>
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Yağ
+                            Oranı %</label><input type="number" step="0.1" id="m-fat" class="w-full"></div>
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Boyun
+                            (cm)</label><input type="number" step="0.1" id="m-neck" class="w-full" oninput="window.calculateFatPercentage()"></div>
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Göğüs
+                            (cm)</label><input type="number" step="0.1" id="m-chest" class="w-full"></div>
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Bel
+                            (cm)</label><input type="number" step="0.1" id="m-waist" class="w-full" oninput="window.calculateFatPercentage()"></div>
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Basen
+                            (cm)</label><input type="number" step="0.1" id="m-basen" class="w-full" oninput="window.calculateFatPercentage()"></div>
+                </div>
+
+
+
+                <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 1rem;">
+
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Sol
+                            Önkol (cm)</label><input type="number" step="0.1" id="m-l-onkol" class="w-full"></div>
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Sağ
+                            Önkol (cm)</label><input type="number" step="0.1" id="m-r-onkol" class="w-full"></div>
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Sol
+                            Kol (cm)</label><input type="number" step="0.1" id="m-l-arm" class="w-full"></div>
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Sağ
+                            Kol (cm)</label><input type="number" step="0.1" id="m-r-arm" class="w-full"></div>
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Sol
+                            Üst Bacak (cm)</label><input type="number" step="0.1" id="m-l-bacak" class="w-full"></div>
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Sağ
+                            Üst Bacak (cm)</label><input type="number" step="0.1" id="m-r-bacak" class="w-full"></div>
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Sol
+                            Kalf (cm)</label><input type="number" step="0.1" id="m-l-kalf" class="w-full"></div>
+                    <div class="form-group"><label
+                            style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Sağ
+                            Kalf (cm)</label><input type="number" step="0.1" id="m-r-kalf" class="w-full"></div>
+                </div>
+                <button type="submit" class="btn-primary w-full mt-1">Kaydet</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: Geri Al Logu -->
+    <div id="modal-undo-log" class="modal">
+        <div class="modal-content wide">
+            <span class="close" onclick="closeModal('modal-undo-log')">&times;</span>
+            <h2>↩ Geri Al (İşlem Geçmişi)</h2>
+            <p style="margin-bottom:1rem; color:var(--text-dim); font-size:0.9rem;">Son yaptığınız işlemler aşağıda
+                listelenmiştir. Geri almak istediğiniz işleme tıklayın.</p>
+            <div id="undo-log-list" class="m-list" style="max-height: 60vh; overflow-y: auto;">
+                <!-- Loglar buraya gelecek -->
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-detail" class="modal">
+        <div class="modal-content wide"><span class="close" onclick="closeModal('modal-detail')">&times;</span>
+            <h2 id="detail-title">Detaylar</h2>
+            <div id="detail-body"></div>
+            <div class="modal-btns"><button class="btn-undo" onclick="globalUndo()">Geri Al</button></div>
+        </div>
+    </div>
+        <div id="modal-schedule" class="modal">
+            <div class="modal-content">
+                <span class="close" onclick="closeModal('modal-schedule')">&times;</span>
+                <h2 id="schedule-modal-title">Haftalık programa ekle</h2>
+                <form onsubmit="window.saveScheduleEntry(event)">
+                    <input type="hidden" id="schedule-id">
+                    <label for="schedule-member">Üye</label>
+                    <select id="schedule-member" required></select>
+                    <fieldset class="schedule-picker">
+                        <legend>Haftalık seanslar <span>(her günün saati ve branşı bağımsızdır)</span></legend>
+                        <div id="schedule-rows" class="schedule-rows"></div>
+                        <button class="btn-secondary schedule-add-row" type="button" onclick="window.addScheduleRow()">+ Gün ve seans ekle</button>
+                    </fieldset>
+                    <label for="schedule-notes">Not (opsiyonel)<textarea id="schedule-notes" rows="3"></textarea></label>
+                    <div class="modal-btns">
+                        <button class="btn-primary" type="submit">Kaydet</button>
+                        <button class="btn-delete" id="schedule-delete" type="button"
+                            onclick="window.deleteScheduleEntry()">Sil</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div id="modal-member" class="modal">
+        <div class="modal-content"><span class="close" onclick="closeModal('modal-member')">&times;</span>
+                        <h2>Üye Kaydı</h2>
+            <form onsubmit="handleMemberSubmit(event)"><input type="hidden" id="edit-member-id"><input type="text"
+                    id="m-name" placeholder="Ad Soyad" required>
+                <input type="number" id="m-height" placeholder="Boy (cm)" step="0.1">
+                <select id="m-gender">
+                    <option value="Erkek">Erkek</option>
+                    <option value="Kadın">Kadın</option>
+                </select><select id="m-branch">
+                    <option value="Fitness">Fitness</option>
+                    <option value="Karate">Karate</option>
+                    <option value="Basketbol">Basketbol</option>
+                    <option value="Yoga">Yoga</option>
+                    <option value="Fonksiyonel Egzersiz">Fonksiyonel Egzersiz</option>
+                </select>
+                <label for="m-trainer">Eğitmen</label>
+                <select id="m-trainer" required>
+                    <option value="burak-ozcan">Burak Özcan</option>
+                </select>
+                <input type="date" id="m-reg-date" required><button type="submit"
+                    class="btn-primary w-full">Kaydet</button></form>
+        </div>
+    </div>
+    <div id="wizard-modal" class="modal">
+        <div class="modal-content wizard-layout"><span class="close" onclick="closeModal('wizard-modal')">&times;</span>
+            <div id="wizard-content"></div>
+        </div>
+    </div>
+
+    <script src="data-service.js?v=1.3.114"></script>
+    <script src="exercise-domain.js?v=1.3.114"></script>
+    <script src="script.js?v=1.3.114"></script>
+</body>
+
+</html>
