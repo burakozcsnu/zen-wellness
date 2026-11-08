@@ -6,7 +6,7 @@
 
  document.addEventListener('DOMContentLoaded', () => {
     // --- CACHE BUSTER ---
-    const APP_VERSION = '1.3.114';
+    const APP_VERSION = '1.3.115';
     const vTag = document.getElementById('version-tag');
     if (vTag) vTag.innerText = `v${APP_VERSION} - Realtime Sync`;
     let activeLoginRole = 'admin';
@@ -206,7 +206,7 @@
     const CONFIG = {
         SUPABASE_URL: 'https://mdcvljbbnoxqsfwcjvqz.supabase.co',
         SUPABASE_KEY: 'sb_publishable_cR0_yg6oxqfP4mAcPTL4Bw_ZhW16sSr',
-        VAPID_PUBLIC_KEY: 'BA4GRDmB8WDBMjgK8HRuqN7LuYUKgCKpaFLzpVjkjmxvA73_8pqWDZ10zhOBpmGMoKdqqKy1cGEqgQP7FBym-k8',
+        VAPID_PUBLIC_KEY: 'BJx6pZl_kYFxXZZ28NRlP0XPEjUwwvlCn2tal2DblY_EMxopkxxA1TfL4SYlvIiAuSsB61qkctZ99jtk4L5mQPE',
         IS_DEV: true
     };
 
@@ -416,10 +416,21 @@
         await navigator.serviceWorker.register('./sw.js', { scope: './' });
         // A freshly registered worker is still installing; subscribe() needs an active one.
         const registration = await navigator.serviceWorker.ready;
-        const existing = await registration.pushManager.getSubscription();
+        const serverKey = decodeVapidKey(CONFIG.VAPID_PUBLIC_KEY);
+        let existing = await registration.pushManager.getSubscription();
+        // A subscription made with an older VAPID key can never receive pushes; replace it.
+        const existingKey = existing?.options?.applicationServerKey;
+        if (existing && existingKey) {
+            const bytes = new Uint8Array(existingKey);
+            const sameKey = bytes.length === serverKey.length && bytes.every((byte, index) => byte === serverKey[index]);
+            if (!sameKey) {
+                await existing.unsubscribe();
+                existing = null;
+            }
+        }
         const subscription = existing || await registration.pushManager.subscribe({
             userVisibleOnly: true,
-            applicationServerKey: decodeVapidKey(CONFIG.VAPID_PUBLIC_KEY)
+            applicationServerKey: serverKey
         });
         const { endpoint, keys } = subscription.toJSON();
         const { error } = await dataService.mutate('push_subscriptions', 'upsert', {
