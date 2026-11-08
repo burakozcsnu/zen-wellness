@@ -58,7 +58,9 @@ const fetchJson = async (path: string, options: RequestInit = {}) => {
         headers: { ...headers, ...options.headers }
     });
     if (!response.ok) throw new Error(`${path}: ${response.status} ${await response.text()}`);
-    return response.json();
+    // Writes sent with "Prefer: return=minimal" reply with an empty body.
+    const text = await response.text();
+    return text ? JSON.parse(text) : null;
 };
 
 Deno.serve(async request => {
