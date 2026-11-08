@@ -358,6 +358,27 @@ async function migrate() {
       ));
     `);
 
+    // Live sync: the trainer view listens for changes on these tables (REALTIME_TABLES in script.js).
+    // Realtime still applies RLS, so users only receive rows they may read. Additive and re-runnable.
+    await client.query(`
+      DO $$
+      DECLARE t text;
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+          CREATE PUBLICATION supabase_realtime;
+        END IF;
+        FOREACH t IN ARRAY ARRAY['uyeler','programlar','olcumler','antrenmanlar','dokumanlar',
+                                 'weekly_program_schedule','master_egzersizler','master_besinler',
+                                 'beslenme_planlari','device_connections','health_metrics','workout_sessions'] LOOP
+          IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = t)
+             AND NOT EXISTS (SELECT 1 FROM pg_publication_tables
+                             WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = t) THEN
+            EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', t);
+          END IF;
+        END LOOP;
+      END $$;
+    `);
+
     const requiredPolicies = ['device_connections_member_access', 'health_metrics_member_access', 'workout_sessions_member_access'];
     const policyResult = await client.query(
       `SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND policyname = ANY($1::text[])`,
