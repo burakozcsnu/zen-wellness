@@ -76,6 +76,8 @@ npx serve .            # or: python3 -m http.server 8080
 
 Open `http://localhost:3000` (or `:8080`). The service worker only handles push notifications (no offline cache). After each change, hard refresh; after changing `sw.js`, unregister it in DevTools > Application > Service Workers. Bump the `?v=` version in `index.html` and `APP_VERSION` in `script.js` with every release.
 
+Tests (no dependencies, no network): `node --test "tests/**/*.test.js"`. Security check against the live database: `node scripts/check-member-permissions.js` (see `docs/local-setup.md`).
+
 ## A6. Deploy and rollback
 
 - A push to `main` deploys GitHub Pages and runs the migration scripts against the live database.

@@ -408,6 +408,19 @@ async function migrate() {
       FOR EACH ROW EXECUTE FUNCTION public.uyeler_limit_member_updates();
     `);
 
+    // Diet plans belong to a client but had no link, so deleting a client left them behind.
+    // NOT VALID: applies to new deletions without checking (or failing on) existing rows.
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'beslenme_planlari_member_id_fkey') THEN
+          ALTER TABLE public.beslenme_planlari
+            ADD CONSTRAINT beslenme_planlari_member_id_fkey
+            FOREIGN KEY (member_id) REFERENCES public.uyeler(id) ON DELETE CASCADE NOT VALID;
+        END IF;
+      END $$;
+    `);
+
     const requiredPolicies = ['device_connections_member_access', 'health_metrics_member_access', 'workout_sessions_member_access'];
     const policyResult = await client.query(
       `SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND policyname = ANY($1::text[])`,

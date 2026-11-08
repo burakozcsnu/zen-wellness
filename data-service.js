@@ -5,8 +5,23 @@
     const NETWORK_ERROR = /Failed to fetch|Load failed|NetworkError|network connection was lost/i;
     const MAX_ATTEMPTS = 5;
     const RETRY_MS = 30000;
+    let lastId = 0;
+    const pad = value => String(value).padStart(2, '0');
 
     window.TrainerProDataService = {
+        // New record number: the millisecond timestamp, nudged forward when needed so this
+        // device never hands out the same number twice (several rows saved at once).
+        newId() {
+            lastId = Math.max(Date.now(), lastId + 1);
+            return lastId;
+        },
+
+        // YYYY-MM-DD in the device's own time zone. toISOString() would give the UTC date,
+        // which in Turkey is still "yesterday" between 00:00 and 03:00.
+        localDate(date = new Date()) {
+            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+        },
+
         create(client) {
             if (!client) throw new Error('Supabase client is required.');
             const queueKey = 'trainerpro_sync_queue';

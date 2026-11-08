@@ -6,7 +6,7 @@
 
  document.addEventListener('DOMContentLoaded', () => {
     // --- CACHE BUSTER ---
-    const APP_VERSION = '1.3.116';
+    const APP_VERSION = '1.3.117';
     const vTag = document.getElementById('version-tag');
     if (vTag) vTag.innerText = `v${APP_VERSION} - Realtime Sync`;
     let activeLoginRole = 'admin';
@@ -159,7 +159,7 @@
     };
     const createScheduleNotification = async ({ memberId, scheduleId = null, action, message }) => {
         const { error } = await dataService.mutate('schedule_notifications', 'insert', {
-            id: Date.now(),
+            id: window.TrainerProDataService.newId(),
             member_id: memberId,
             schedule_id: scheduleId,
             action,
@@ -440,7 +440,7 @@
         });
         const { endpoint, keys } = subscription.toJSON();
         const { error } = await dataService.mutate('push_subscriptions', 'upsert', {
-            id: Date.now(),
+            id: window.TrainerProDataService.newId(),
             member_id: member.id,
             endpoint,
             p256dh: keys?.p256dh,
@@ -591,7 +591,7 @@
             new Date(b.created_at) - new Date(a.created_at));
         const attendanceByKey = new Map(attendance.map(item => [`${item.schedule_id}:${item.occurrence_date}`, item.status]));
         const completionByKey = new Map(completions.map(item => [`${item.workout_id}:${item.exercise_index}:${item.completion_date}`, item.completed]));
-        const todayDate = new Date().toISOString().slice(0, 10);
+        const todayDate = window.TrainerProDataService.localDate();
         const dailyExercises = sortedWorkouts.flatMap(workout => {
             const sets = window.safeJSONParse(workout.setler, []);
             return sets.map((set, index) => ({ workout, set, index }));
@@ -609,7 +609,7 @@
             const todayDay = today.getDay() || 7;
             const offset = (Number(day) - todayDay + 7) % 7;
             today.setDate(today.getDate() + offset);
-            return today.toISOString().slice(0, 10);
+            return window.TrainerProDataService.localDate(today);
         };
         const calendarMarkup = scheduleDays.map(([day, label]) => {
             const daySchedules = sortedSchedules.filter(item => Number(item.day_of_week) === day);
@@ -751,7 +751,7 @@
     window.toggleScheduleAttendance = async (scheduleId, occurrenceDate, status) => {
         if (!activeMemberPortalMemberId) return;
         const { error } = await dataService.mutate('schedule_attendance', 'upsert', {
-            id: Date.now(),
+            id: window.TrainerProDataService.newId(),
             member_id: activeMemberPortalMemberId,
             schedule_id: scheduleId,
             occurrence_date: occurrenceDate,
@@ -769,11 +769,11 @@
     window.toggleWorkoutExercise = async (workoutId, exerciseIndex, completed) => {
         if (!activeMemberPortalMemberId) return;
         const { error } = await dataService.mutate('workout_completions', 'upsert', {
-            id: Date.now(),
+            id: window.TrainerProDataService.newId(),
             member_id: activeMemberPortalMemberId,
             workout_id: workoutId,
             exercise_index: exerciseIndex,
-            completion_date: new Date().toISOString().slice(0, 10),
+            completion_date: window.TrainerProDataService.localDate(),
             completed,
             updated_at: new Date().toISOString()
         }, { onConflict: 'member_id,workout_id,exercise_index,completion_date' });
@@ -964,7 +964,7 @@
             degerlendirme_tarihi: completedAt
         };
         const measurement = {
-            id: Date.now(),
+            id: window.TrainerProDataService.newId(),
             member_id: member.id,
             tarih: completedAt.slice(0, 10),
             weight: answers.boy.weight,
@@ -1757,7 +1757,7 @@
     window.saveNewFood = async (e) => {
         e.preventDefault();
         const existingId = document.getElementById('edit-f-id').value;
-        const id = existingId || Date.now();
+        const id = existingId || window.TrainerProDataService.newId();
         const newData = {
             id,
             ad: document.getElementById('new-f-name').value,
@@ -2106,7 +2106,7 @@
         });
 
         const d = {
-            id: Date.now(),
+            id: window.TrainerProDataService.newId(),
             member_id: state.activeMemberId,
             tarih: document.getElementById('d-date').value,
             plan_adi: document.getElementById('d-name').value,
@@ -2585,7 +2585,7 @@
         };
         const entries = rows.map((row, index) => ({
             ...baseData, ...row,
-            id: id && index === 0 ? id : Date.now() + index
+            id: id && index === 0 ? id : window.TrainerProDataService.newId()
         }));
         const { error } = await dataService.mutate('weekly_program_schedule', 'upsert', entries);
         if (error) {
@@ -2993,7 +2993,7 @@
     window.handleMemberSubmit = async (e) => {
         e.preventDefault();
         const existingId = document.getElementById('edit-member-id').value;
-        const id = existingId || Date.now();
+        const id = existingId || window.TrainerProDataService.newId();
         const oldData = existingId ? state.members.find(m => m.id == existingId) : null;
         const heightVal = document.getElementById('m-height') ? parseFloat(document.getElementById('m-height').value) : null;
         const m = {
@@ -3054,7 +3054,7 @@
     window.saveNewExercise = async (e) => {
         e.preventDefault();
         const existingId = document.getElementById('edit-ex-id').value;
-        const id = existingId || Date.now();
+        const id = existingId || window.TrainerProDataService.newId();
         const muscles = Array.from(document.querySelectorAll('input[name="muscle"]:checked')).map(cb => cb.value);
         const gruplar = {
             bodyPart: document.getElementById('group-body-part').value,
@@ -3153,7 +3153,7 @@
     window.saveCardioTest = async (e) => {
         e.preventDefault();
         const existingId = document.getElementById('c-id').value;
-        const id = existingId || Date.now();
+        const id = existingId || window.TrainerProDataService.newId();
         // Check if there is an existing measurement on this date to merge, or create new
         const dateVal = document.getElementById('c-date').value;
         const datedMeasurement = state.measurements.find(x => x.member_id == state.activeMemberId && x.tarih == dateVal);
@@ -3335,7 +3335,7 @@ window.editMeasurement = (id) => {
     window.saveMeasurement = async (e) => {
         e.preventDefault();
         const existingId = document.getElementById('m-id').value;
-        const id = existingId || Date.now();
+        const id = existingId || window.TrainerProDataService.newId();
         const dateVal = document.getElementById('m-date').value;
         let m = state.measurements.find(x => x.member_id == state.activeMemberId && x.tarih == dateVal);
 
@@ -3523,7 +3523,7 @@ window.editMeasurement = (id) => {
         });
 
         const w = {
-            id: Date.now(),
+            id: window.TrainerProDataService.newId(),
             member_id: state.activeMemberId,
             tarih: document.getElementById('w-date').value,
             sablon: document.getElementById('w-name').value,
@@ -3545,7 +3545,7 @@ window.editMeasurement = (id) => {
     window.startWorkoutSession = async (activityType = 'traditional_strength') => {
         if (!state.activeMemberId) throw new Error('Aktif üye seçilmedi.');
         const session = {
-            id: Date.now(),
+            id: window.TrainerProDataService.newId(),
             member_id: state.activeMemberId,
             source: 'trainer_pro',
             activity_type: activityType,
@@ -3581,7 +3581,7 @@ window.editMeasurement = (id) => {
         const session = state.activeWorkoutSession;
         if (!session) throw new Error('Aktif antrenman oturumu bulunamadı.');
         const payload = {
-            id: step.id || Date.now(),
+            id: step.id || window.TrainerProDataService.newId(),
             workout_session_id: session.id,
             exercise_name: step.exerciseName,
             step_index: step.stepIndex,
@@ -3621,7 +3621,7 @@ window.editMeasurement = (id) => {
     window.handleProgramSubmit = async (e) => {
         e.preventDefault();
         const existingId = document.getElementById('edit-program-id').value;
-        const id = existingId || Date.now();
+        const id = existingId || window.TrainerProDataService.newId();
         const name = document.getElementById('p-name').value;
         const details = [];
         document.querySelectorAll('.p-ex-name').forEach(sel => {
@@ -3919,7 +3919,46 @@ window.editMeasurement = (id) => {
     window.deleteMeasurement = async (id) => { if (confirm("Silinsin mi?")) { const oldData = state.measurements.find(m => m.id == id); const result = await dataService.mutate('olcumler', 'delete', null, { id }); if (result.error) throw result.error; window.pushToUndoLog('DELETE', 'olcumler', oldData, null, `Ölçüm Silindi`); await sync(); } };
     window.deleteExercise = async (id) => { if (confirm("Silinsin mi?")) { const oldData = state.exercises.find(e => e.id == id); const result = await dataService.mutate('master_egzersizler', 'delete', null, { id }); if (result.error) throw result.error; window.pushToUndoLog('DELETE', 'master_egzersizler', oldData, null, `Egzersiz Silindi: ${oldData.ad}`); await sync(); } };
     window.deleteProgram = async (id) => { if (confirm("Silinsin mi?")) { const oldData = state.programs.find(p => p.id == id); const result = await dataService.mutate('programlar', 'delete', null, { id }); if (result.error) throw result.error; window.pushToUndoLog('DELETE', 'programlar', oldData, null, `Şablon Silindi: ${oldData.program_adi}`); await sync(); } };
-    window.deleteMember = async (id) => { if (confirm("Bu üyeyi silmek istediğinize emin misiniz?")) { const oldData = state.members.find(m => m.id == id); const result = await dataService.mutate('uyeler', 'delete', null, { id }); if (result.error) throw result.error; window.pushToUndoLog('DELETE', 'uyeler', oldData, null, `Üye Silindi: ${oldData.ad_soyad}`); await sync(); } };
+    // Deleting a client is permanent and complete (KVKK): the database removes all linked rows
+    // (ON DELETE CASCADE), and their document files are removed from storage here.
+    // No undo entry: it could only restore the profile row. Recovery is from a backup.
+    window.deleteMember = async (id) => {
+        const member = state.members.find(m => m.id == id);
+        if (!member) return;
+        const count = list => (list || []).filter(item => item.member_id == id).length;
+        const answer = prompt(`${member.ad_soyad} ve tüm verileri kalıcı olarak silinecek: ${count(state.measurements)} ölçüm, ${count(state.workouts)} antrenman, ${count(state.diets)} beslenme planı, ${count(state.documents)} belge, haftalık program ve bildirim kayıtları. Bu işlem geri alınamaz. Onaylamak için danışanın adını yazın:`);
+        if (answer === null) return;
+        const normalize = value => String(value || '').trim().toLocaleLowerCase('tr-TR');
+        if (normalize(answer) !== normalize(member.ad_soyad)) {
+            alert('İsim eşleşmedi, silme iptal edildi.');
+            return;
+        }
+        // Files first: once the profile is gone, nothing in the app leads to them anymore.
+        // Direct calls (not the offline queue): a deletion happens completely now, or not at all.
+        try {
+            const folder = String(id);
+            const { data: files, error: listError } = await supabase.storage.from('dokumanlar').list(folder, { limit: 1000 });
+            if (listError) throw listError;
+            if (files?.length) {
+                const { error: removeError } = await supabase.storage.from('dokumanlar').remove(files.map(file => `${folder}/${file.name}`));
+                if (removeError) throw removeError;
+            }
+        } catch (e) {
+            handleError(e, 'DeleteMember files');
+            alert(`Danışanın belgeleri buluttan silinemedi: ${e.message}. Danışan silinmedi, lütfen tekrar deneyin.`);
+            return;
+        }
+        try {
+            const { data, error } = await supabase.from('uyeler').delete().eq('id', id).select('id');
+            if (error) throw error;
+            if (!data?.length) throw new Error('kayıt bulunamadı veya yetki yok');
+        } catch (e) {
+            handleError(e, 'DeleteMember');
+            alert(`Danışan silinemedi: ${e.message}`);
+            return;
+        }
+        try { await sync(); } catch (e) { handleError(e, 'DeleteMember sync'); }
+    };
 
     // --- DOCUMENTS ---
 
