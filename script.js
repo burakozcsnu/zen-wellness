@@ -4394,7 +4394,13 @@ window.editMeasurement = (id) => {
         const fab = document.createElement('button');
         fab.className = 'fab';
         fab.innerHTML = '➕';
-        fab.onclick = () => state.activeMemberId ? window.tab('measurements') : window.openModal('modal-member');
+        // On a client's profile page: add a measurement. Anywhere else: add a client.
+        // (state.activeMemberId stays set after leaving a profile, so it can't decide this alone.)
+        fab.onclick = () => {
+            const onProfile = document.getElementById('profile-view')?.classList.contains('active');
+            if (onProfile && state.activeMemberId) window.tab('measurements');
+            else window.openModal('modal-member');
+        };
         document.body.appendChild(fab);
     }
 
