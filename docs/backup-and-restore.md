@@ -4,7 +4,14 @@ The Supabase free plan keeps **no backups**. Run a backup **before any database 
 
 ## Make a backup (about 1 minute)
 
-Run in PowerShell from the repository folder. The password is typed into a hidden prompt and kept only in this window.
+**With a `.env` file** (see [local-setup.md](local-setup.md)), run in PowerShell from the repository folder. No prompts:
+
+```powershell
+npm ci --ignore-scripts
+node scripts/backup.js
+```
+
+**Without a `.env` file**, type the password into a hidden prompt. It is kept only in this window:
 
 ```powershell
 $env:SUPABASE_DB_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR((Read-Host "DB password" -AsSecureString)))
@@ -13,7 +20,7 @@ node scripts/backup.js
 Remove-Item Env:SUPABASE_DB_PASSWORD
 ```
 
-The script then asks for the trainer (admin) email and password to download the document files. Use `node scripts/backup.js --skip-files` for a database-only backup.
+Without `ZEN_TRAINER_EMAIL` and `ZEN_TRAINER_PASSWORD` in `.env`, the script then asks for the trainer (admin) email and password to download the document files. Use `node scripts/backup.js --skip-files` for a database-only backup.
 
 **Success looks like:** `Backup complete and verified: … tables, … rows, … accounts, … files.`
 **Anything else** (`Backup FAILED`) means the backup is not usable: delete that folder and run again.

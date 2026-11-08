@@ -11,8 +11,12 @@ const SUPABASE_URL = 'https://mdcvljbbnoxqsfwcjvqz.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_cR0_yg6oxqfP4mAcPTL4Bw_ZhW16sSr';
 const DOCUMENT_BUCKET = 'dokumanlar';
 
+// Optional git-ignored secrets file in the repository folder (see docs/local-setup.md).
+const envFile = path.join(__dirname, '..', '.env');
+if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
+
 const dbPassword = process.env.SUPABASE_DB_PASSWORD;
-if (!dbPassword) throw new Error('SUPABASE_DB_PASSWORD environment variable is required.');
+if (!dbPassword) throw new Error('SUPABASE_DB_PASSWORD is required (set it in .env or in this PowerShell window).');
 const skipFiles = process.argv.includes('--skip-files');
 
 const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
@@ -115,8 +119,8 @@ async function backupDatabase(client, manifest) {
 }
 
 async function backupFiles(objectNames, manifest) {
-  const email = await promptVisible('Trainer (admin) email for document download: ');
-  const password = await promptHidden('Trainer password (hidden): ');
+  const email = process.env.ZEN_TRAINER_EMAIL || await promptVisible('Trainer (admin) email for document download: ');
+  const password = process.env.ZEN_TRAINER_PASSWORD || await promptHidden('Trainer password (hidden): ');
   const loginResponse = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: 'POST',
     headers: { apikey: SUPABASE_PUBLISHABLE_KEY, 'Content-Type': 'application/json' },

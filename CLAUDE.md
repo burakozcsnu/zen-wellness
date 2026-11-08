@@ -39,7 +39,7 @@ A Turkish-language progressive web app (PWA) for fitness and karate trainers. Tr
 | `data-service.js` | Data access layer (Supabase calls, offline queue) |
 | `exercise-domain.js` | Exercise and workout domain logic |
 | `sw.js`, `manifest.webmanifest` | Service worker and PWA manifest |
-| `supabase/functions/send-schedule-reminders/` | Edge Function for reminders (deployed separately, not by CI) |
+| `supabase/functions/send-schedule-reminders/` | Edge Function for reminders. Not deployed by CI: deploy with the Supabase CLI and `--no-verify-jwt` (see `docs/local-setup.md`) |
 | `.supabase/migrate*.js` | Legacy migration scripts, run by CI against production. `migrate_auth.js` fails the deploy if any RLS policy allows anonymous or unconditional access. |
 | `scripts/backup.js`, `docs/` | Local backup script and its guide |
 | `.github/workflows/` | Deployment pipeline |
@@ -64,7 +64,7 @@ Always confirm real table and column names against the live schema before writin
 | Public | Supabase project URL, publishable (anon) key | Allowed in client code |
 | Secret | `service_role` / secret key, database password, Edge Function secrets | Never in the repo, chat, logs, screenshots or client code |
 
-Secrets live in GitHub Actions secrets, Supabase function secrets, or a local `.env` file (gitignored).
+Secrets live in GitHub Actions secrets, Supabase function secrets, or local gitignored files (`.env`, `supabase/.env.functions`; see `docs/local-setup.md`). Agents may run scripts that use these files but must never open, print or quote them (blocked in `.claude/settings.local.json`).
 
 **There is one environment: production.** Treat `main` and the database as live client data.
 
