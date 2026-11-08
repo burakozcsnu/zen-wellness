@@ -6,7 +6,7 @@
 
  document.addEventListener('DOMContentLoaded', () => {
     // --- CACHE BUSTER ---
-    const APP_VERSION = '1.3.115';
+    const APP_VERSION = '1.3.116';
     const vTag = document.getElementById('version-tag');
     if (vTag) vTag.innerText = `v${APP_VERSION} - Realtime Sync`;
     let activeLoginRole = 'admin';
@@ -219,6 +219,12 @@
             setSyncStatus('online', 'Senkronize edildi');
             sync().catch(error => handleError(error, 'Queued sync refresh'));
         }
+    });
+    // An offline change failed for good (kept in localStorage 'trainerpro_sync_failed').
+    window.addEventListener('trainerpro-sync-failed', event => {
+        (event.detail?.failed || []).forEach(item => {
+            alert(`Çevrimdışı yapılan bir değişiklik kaydedilemedi (${item.table}: ${item.lastError}). Lütfen bu bilgiyi tekrar girin.`);
+        });
     });
     supabase.auth.onAuthStateChange((event, session) => {
         if (event === 'PASSWORD_RECOVERY') {
@@ -3931,9 +3937,13 @@ window.editMeasurement = (id) => {
         if (!confirm("Buluttan silinsin mi?")) return;
         try {
             const encodedPath = path.split('/').map(seg => encodeURIComponent(seg)).join('/');
-            await supabase.storage.from('dokumanlar').remove([encodedPath]);
+            const { error } = await supabase.storage.from('dokumanlar').remove([encodedPath]);
+            if (error) throw error;
             await window.scanStorageForDocs();
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            handleError(e, 'DeleteCloudDoc');
+            alert(`Döküman silinemedi: ${e.message}`);
+        }
     };
 
     window.viewDocument = async (path) => {
@@ -3973,14 +3983,27 @@ window.editMeasurement = (id) => {
 
     window.deleteDocument = async (id, path) => {
         if (!confirm("Döküman silinsin mi?")) return;
+        const oldData = state.documents.find(d => d.id == id);
+        const encodedPath = path.split('/').map(seg => encodeURIComponent(seg)).join('/');
+        // Delete the record first; the file is only removed once the record is gone.
         try {
-            const oldData = state.documents.find(d => d.id == id);
-            const encodedPath = path.split('/').map(seg => encodeURIComponent(seg)).join('/');
-            await supabase.from('dokumanlar').delete().eq('id', id);
-            await supabase.storage.from('dokumanlar').remove([encodedPath]);
-            window.pushToUndoLog('DELETE', 'dokumanlar', oldData, null, `Döküman Silindi: ${oldData.adi}`);
-            await sync();
-        } catch (e) { handleError(e, "DeleteDoc"); }
+            const { data, error } = await supabase.from('dokumanlar').delete().eq('id', id).select('id');
+            if (error) throw error;
+            if (!data?.length) throw new Error('kayıt bulunamadı veya yetki yok');
+        } catch (e) {
+            handleError(e, 'DeleteDoc');
+            alert(`Döküman silinemedi: ${e.message}`);
+            return;
+        }
+        if (oldData) window.pushToUndoLog('DELETE', 'dokumanlar', oldData, null, `Döküman Silindi: ${oldData.adi}`);
+        try {
+            const { error } = await supabase.storage.from('dokumanlar').remove([encodedPath]);
+            if (error) throw error;
+        } catch (e) {
+            handleError(e, 'DeleteDocFile');
+            alert(`Döküman kaydı silindi ancak dosya buluttan silinemedi: ${e.message}. Bulut listesinden tekrar silmeyi deneyin.`);
+        }
+        try { await sync(); } catch (e) { handleError(e, 'DeleteDoc sync'); }
     };
 
     // --- MEMBER PROFILE SYNC ---
