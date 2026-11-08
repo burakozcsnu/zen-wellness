@@ -36,6 +36,12 @@ npx supabase@2.122.1 functions deploy send-schedule-reminders --project-ref mdcv
 ```
 `--no-verify-jwt` is required: the timer sends `CRON_SECRET`, not a user login. Without it, every timer call is rejected before the function runs.
 
+**Security check: what can a client change?** (after any change to access rules)
+```powershell
+node scripts/check-member-permissions.js
+```
+Logs in as the test client and expects 3 × `PASS`. It only writes the test client's own row and puts back anything it changes.
+
 ## Safety
 
 - The files hold passwords in plain text. Keep a Windows login password and turn on BitLocker or Device Encryption.

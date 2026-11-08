@@ -379,6 +379,35 @@ async function migrate() {
       END $$;
     `);
 
+    // Clients may update their own profile (uyeler_member_update), but only the questionnaire
+    // columns. Allow-list: new columns stay trainer-only until added here on purpose.
+    // Trainers (admin), migrations and Edge Functions are not limited.
+    await client.query(`
+      CREATE OR REPLACE FUNCTION public.uyeler_limit_member_updates()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      SET search_path = public
+      AS $$
+      DECLARE
+        member_editable text[] := ARRAY['ad_soyad','telefon','dogum_tarihi','cinsiyet','boy',
+          'saglik_gecmisi','alerjiler','beslenme_aliskanliklari','hareket_aliskanliklari',
+          'spor_gecmisi','beklentiler','degerlendirme_verileri','degerlendirme_tamamlandi',
+          'degerlendirme_tarihi'];
+      BEGIN
+        IF current_user = 'authenticated'
+           AND COALESCE(auth.jwt() -> 'app_metadata' ->> 'role', '') <> 'admin'
+           AND (to_jsonb(NEW) - member_editable) IS DISTINCT FROM (to_jsonb(OLD) - member_editable) THEN
+          RAISE EXCEPTION 'Clients may only update their questionnaire fields' USING ERRCODE = '42501';
+        END IF;
+        RETURN NEW;
+      END;
+      $$;
+
+      CREATE OR REPLACE TRIGGER uyeler_limit_member_updates
+      BEFORE UPDATE ON public.uyeler
+      FOR EACH ROW EXECUTE FUNCTION public.uyeler_limit_member_updates();
+    `);
+
     const requiredPolicies = ['device_connections_member_access', 'health_metrics_member_access', 'workout_sessions_member_access'];
     const policyResult = await client.query(
       `SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND policyname = ANY($1::text[])`,
