@@ -169,7 +169,7 @@ async function main() {
     database: 'postgres',
     password: dbPassword,
     port: 6543,
-    ssl: { rejectUnauthorized: false }
+    ssl: { ca: fs.readFileSync(path.join(__dirname, '..', '.supabase', 'prod-ca-2021.crt'), 'utf8') } // verify Supabase's certificate
   });
   console.log(`Backing up to ${outDir}`);
   fs.mkdirSync(outDir, { recursive: true });

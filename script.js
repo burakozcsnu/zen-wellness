@@ -206,8 +206,7 @@
     const CONFIG = {
         SUPABASE_URL: 'https://mdcvljbbnoxqsfwcjvqz.supabase.co',
         SUPABASE_KEY: 'sb_publishable_cR0_yg6oxqfP4mAcPTL4Bw_ZhW16sSr',
-        VAPID_PUBLIC_KEY: 'BJx6pZl_kYFxXZZ28NRlP0XPEjUwwvlCn2tal2DblY_EMxopkxxA1TfL4SYlvIiAuSsB61qkctZ99jtk4L5mQPE',
-        IS_DEV: true
+        VAPID_PUBLIC_KEY: 'BJx6pZl_kYFxXZZ28NRlP0XPEjUwwvlCn2tal2DblY_EMxopkxxA1TfL4SYlvIiAuSsB61qkctZ99jtk4L5mQPE'
     };
 
     const supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);

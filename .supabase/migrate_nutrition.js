@@ -11,9 +11,7 @@ const client = new Client({
   database: 'postgres',
   password: dbPassword,
   port: 6543,
-  ssl: {
-    rejectUnauthorized: false
-  }
+  ssl: { ca: require('fs').readFileSync(require('path').join(__dirname, 'prod-ca-2021.crt'), 'utf8') } // verify Supabase's certificate
 });
 
 async function migrate() {

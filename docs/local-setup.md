@@ -48,6 +48,7 @@ Logs in as the test client and expects 3 × `PASS`. It only writes the test clie
 - If this PC is lost or shared: change the database password, the trainer password and `CRON_SECRET`, and create new keys under API Keys.
 - Never copy these files into the repository, email, chat or screenshots.
 - Production changes still need the owner's explicit approval (CLAUDE.md B2). Saved passwords do not change that.
+- Database scripts verify the server with Supabase's public certificate `.supabase/prod-ca-2021.crt` (valid until 26 Apr 2031). If Supabase replaces it, download the new one (Project Settings > Database > SSL Configuration) and check its fingerprint before committing.
 
 ## Agent access
 
