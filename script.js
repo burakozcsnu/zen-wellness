@@ -6,7 +6,7 @@
 
  document.addEventListener('DOMContentLoaded', () => {
     // --- CACHE BUSTER ---
-    const APP_VERSION = '1.3.119';
+    const APP_VERSION = '1.3.120';
     const vTag = document.getElementById('version-tag');
     if (vTag) vTag.innerText = `v${APP_VERSION} - Realtime Sync`;
     let activeLoginRole = 'admin';
@@ -65,7 +65,7 @@
             else enterMemberPortal();
         } catch (error) {
             handleError(error, 'Admin session check');
-            showAuthError(error.message);
+            showAuthError(trMessage(error));
             window.openModal('modal-auth');
         }
     };
@@ -139,6 +139,24 @@
     };
     const isAdminSession = (session) => session?.user?.app_metadata?.role === 'admin';
     const isMemberSession = (session) => session?.user?.app_metadata?.role === 'user';
+    // Turkish text for errors that come from Supabase or the browser (English). Our own plain Error()s are already Turkish.
+    const TR_ERRORS = [
+        [/invalid login credentials/i, 'E-posta veya şifre hatalı.'],
+        [/email not confirmed/i, 'E-posta adresiniz henüz doğrulanmamış.'],
+        [/already registered|already been registered/i, 'Bu e-posta adresiyle zaten bir hesap var.'],
+        [/password should be at least|weak password/i, 'Şifre çok kısa veya zayıf.'],
+        [/rate limit|too many requests|over_.*_rate_limit/i, 'Çok fazla deneme yapıldı. Lütfen biraz bekleyip tekrar deneyin.'],
+        [/failed to fetch|networkerror|network request failed|load failed/i, 'İnternet bağlantısı kurulamadı. Bağlantınızı kontrol edip tekrar deneyin.'],
+        [/jwt|refresh token|not authenticated|session/i, 'Oturumunuz sona erdi. Lütfen tekrar giriş yapın.'],
+        [/permission denied|row-level security|not allowed|notallowederror/i, 'Bu işlem için yetkiniz yok.'],
+        [/push service|registration failed|subscribe/i, 'Bildirim kaydı yapılamadı. Lütfen tekrar deneyin.']
+    ];
+    const trMessage = (error) => {
+        const message = error?.message || String(error || '');
+        if (error instanceof Error && error.constructor === Error) return message;
+        return TR_ERRORS.find(([pattern]) => pattern.test(`${error?.name || ''} ${message}`))?.[1]
+            || 'Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.';
+    };
     const showAuthError = (message) => {
         const errorElement = document.getElementById('auth-error');
         if (errorElement) errorElement.textContent = message;
@@ -331,7 +349,7 @@
                     : 'Giriş işlemi zaman aşımına uğradı. İnternet bağlantınızı kontrol edip tekrar deneyin.'
             );
             if (error) {
-                showAuthError(error.message || 'Kimlik bilgileri geçersiz.');
+                showAuthError(trMessage(error));
                 return;
             }
             if (activeAuthMode === 'signup' && !authData.session) {
@@ -357,7 +375,7 @@
             else enterMemberPortal();
         } catch (error) {
             handleError(error, 'Admin login');
-            showAuthError(error.message);
+            showAuthError(trMessage(error));
         } finally {
             if (submitButton) submitButton.disabled = false;
         }
@@ -537,7 +555,7 @@
             await registerMemberPushSubscription(memberNotificationMember);
         } catch (error) {
             handleError(error, 'Member push subscription');
-            if (status) status.textContent = error.message;
+            if (status) status.textContent = trMessage(error);
             return;
         }
         if (status) {
@@ -574,7 +592,7 @@
             await loadMemberPortal();
         } catch (error) {
             handleError(error, 'Member push unsubscribe');
-            alert(`Bildirimler kapatılamadı: ${error.message}`);
+            alert(`Bildirimler kapatılamadı: ${trMessage(error)}`);
         }
     };
 
@@ -651,7 +669,7 @@
                 </div>
             </section>
             <section class="member-portal-card member-portal-section" data-portal-section="schedule">
-                <h2>🗓️ Haftalık programım</h2>
+                <h2>Haftalık programım</h2>
                 <div class="member-schedule-calendar">${calendarMarkup}</div>
                 ${sortedSchedules.length ? `<ul class="member-portal-list member-schedule-list">${sortedSchedules.map(item => `
                     <li>
@@ -662,7 +680,7 @@
                     </li>`).join('')}</ul>` : '<p class="member-portal-muted">Henüz haftalık seans atanmadı.</p>'}
             </section>
             <section class="member-portal-card member-portal-section" data-portal-section="notifications">
-                <h2>🔔 Bildirim Merkezi</h2>
+                <h2>Bildirim Merkezi</h2>
                 <p class="member-portal-muted">Bu cihazdaki seans hatırlatmaları ve gönderim geçmişi.</p>
                 ${sortedNotifications.length ? `<ul class="member-portal-list member-notification-history">${sortedNotifications.slice(0, 20).map(notification => `
                     <li>
@@ -681,7 +699,7 @@
             </section>
             <div class="member-portal-grid" style="margin-top:1rem">
                 <section class="member-portal-card member-portal-section" data-portal-section="measurements">
-                    <h2 style="margin-bottom:1rem; color:var(--accent);">📊 Vücut Ölçümleri & Analiz</h2>
+                    <h2 style="margin-bottom:1rem; color:var(--accent);">Vücut Ölçümleri & Analiz</h2>
 
                     <div class="member-portal-grid" style="margin-bottom: 1.5rem; background:rgba(255,255,255,0.02); padding:1rem; border-radius:12px;">
                         ${metrics.map(([label, value, unit]) => `
@@ -689,7 +707,7 @@
                         `).join('')}
                     </div>
 
-                    <h3 style="margin-bottom:1rem; font-size:1rem; color:var(--primary);">🫀 Kardiyo ve Metabolizma (Son Test)</h3>
+                    <h3 style="margin-bottom:1rem; font-size:1rem; color:var(--primary);">Kardiyo ve Metabolizma (Son Test)</h3>
                     ${(() => {
                         const cardioData = sortedMeasurements.find(m => m.rhr || m.bmr || m.vo2max);
                         if (!cardioData) return '<p class="member-portal-muted">Henüz kardiyo ve metabolizma test kaydı bulunmuyor.</p>';
@@ -717,7 +735,7 @@
                 </section>
 
                 <section class="member-portal-card member-portal-section" data-portal-section="workouts">
-                    <h2 style="margin-bottom:1rem; color:var(--accent);">🏋️ Günlük egzersizler</h2>
+                    <h2 style="margin-bottom:1rem; color:var(--accent);">Günlük egzersizler</h2>
                     <ul class="member-portal-list member-exercise-list">${exerciseMarkup}</ul>
                     <h3 style="margin:1rem 0 0.75rem;">Antrenman geçmişi</h3>
                     ${sortedWorkouts.length ? `<ul class="member-portal-list">${sortedWorkouts.slice(0, 10).map(workout => `
@@ -729,7 +747,7 @@
                 </section>
 
                 <section class="member-portal-card member-portal-section" data-portal-section="nutrition">
-                    <h2 style="margin-bottom:1rem; color:var(--accent);">🍏 Beslenme planları</h2>
+                    <h2 style="margin-bottom:1rem; color:var(--accent);">Beslenme planları</h2>
                     ${sortedDiets.length ? `<ul class="member-portal-list">${sortedDiets.map(diet => {
                         const meals = window.safeJSONParse(diet.ogunler, []);
                         let tCal = 0, tPro = 0, tCarb = 0, tFat = 0;
@@ -743,7 +761,7 @@
                                 <span class="member-portal-muted">${escapePortalText(diet.tarih)}</span>
                             </div>
                             <div style="display:flex; gap:0.5rem; font-size:0.75rem; color:var(--text-dim); flex-wrap:wrap;">
-                                <span style="background:rgba(255,165,0,0.1); color:orange; padding:0.2rem 0.5rem; border-radius:4px;">🔥 ${tCal.toFixed(0)} kcal</span>
+                                <span style="background:rgba(255,165,0,0.1); color:orange; padding:0.2rem 0.5rem; border-radius:4px;">${tCal.toFixed(0)} kcal</span>
                                 <span style="background:rgba(143,183,217,0.1); color:var(--primary); padding:0.2rem 0.5rem; border-radius:4px;">P: ${tPro.toFixed(0)}g</span>
                                 <span style="background:rgba(143,183,217,0.1); color:var(--primary); padding:0.2rem 0.5rem; border-radius:4px;">C: ${tCarb.toFixed(0)}g</span>
                                 <span style="background:rgba(143,183,217,0.1); color:var(--primary); padding:0.2rem 0.5rem; border-radius:4px;">Y: ${tFat.toFixed(0)}g</span>
@@ -752,7 +770,7 @@
                     }).join('')}</ul>` : '<p class="member-portal-muted">Henüz beslenme planı bulunmuyor.</p>'}
                 </section>
                 <section class="member-portal-card member-portal-section" data-portal-section="documents">
-                    <h2>📄 Belgeler</h2>
+                    <h2>Belgeler</h2>
                     ${documents.length ? `<ul class="member-portal-list">${documents.map(document => `
                         <li><strong>${escapePortalText(document.adi || 'Belge')}</strong><br>
                         <span class="member-portal-muted">${escapePortalText(document.tip)}</span></li>
@@ -775,7 +793,7 @@
         }, { onConflict: 'member_id,schedule_id,occurrence_date' });
         if (error) {
             handleError(error, 'Schedule attendance');
-            alert(`Katılım durumu kaydedilemedi: ${error.message}`);
+            alert(`Katılım durumu kaydedilemedi: ${trMessage(error)}`);
             return;
         }
         await loadMemberPortal();
@@ -794,7 +812,7 @@
         }, { onConflict: 'member_id,workout_id,exercise_index,completion_date' });
         if (error) {
             handleError(error, 'Workout completion');
-            alert(`Egzersiz durumu kaydedilemedi: ${error.message}`);
+            alert(`Egzersiz durumu kaydedilemedi: ${trMessage(error)}`);
             return;
         }
         await loadMemberPortal();
@@ -1140,7 +1158,7 @@
             if (status) status.textContent = 'Salt okunur danışan paneli';
         } catch (error) {
             handleError(error, 'Member portal load');
-            if (status) status.textContent = `Panel yüklenemedi: ${error.message}`;
+            if (status) status.textContent = `Panel yüklenemedi: ${trMessage(error)}`;
         }
     }
 
@@ -1327,7 +1345,7 @@
 
         // Hızlıca UI'ı dondur veya loading göster
         const fab = document.querySelector('.fab');
-        if(fab) fab.innerHTML = '⏳';
+        if(fab) fab.classList.add('is-busy');
 
         try {
             const actions = state.undoStack.slice(0, index + 1);
@@ -1336,19 +1354,22 @@
                 // INSERT edilen veriyi veritabanından SIL (Geri al)
                 if (action.type === 'INSERT') {
                     if (action.newData && action.newData.id) {
-                        await supabase.from(action.table).delete().eq('id', action.newData.id);
+                        const { error } = await supabase.from(action.table).delete().eq('id', action.newData.id);
+                        if (error) throw error;
                     }
                 }
                 // DELETE edilen veriyi veritabanına TEKRAR EKLE (Geri al)
                 else if (action.type === 'DELETE') {
                     if (action.oldData) {
-                        await supabase.from(action.table).insert(action.oldData);
+                        const { error } = await supabase.from(action.table).insert(action.oldData);
+                        if (error) throw error;
                     }
                 }
                 // UPDATE edilen veriyi ESKİ HALİNE UPSERT ET (Geri al)
                 else if (action.type === 'UPDATE') {
                     if (action.oldData) {
-                        await supabase.from(action.table).upsert(action.oldData);
+                        const { error } = await supabase.from(action.table).upsert(action.oldData);
+                        if (error) throw error;
                     }
                 }
             }
@@ -1361,9 +1382,9 @@
             alert("İşlemler başarıyla geri alındı!");
         } catch (err) {
             console.error("Geri Alma Hatası (RevertTo):", err);
-            alert("Geri alma işlemi sırasında bir hata oluştu! Konsolu kontrol edin.");
+            alert("Geri alma işlemi sırasında bir hata oluştu. Bazı değişiklikler geri alınmamış olabilir; lütfen kontrol edip tekrar deneyin.");
         } finally {
-            if(fab) fab.innerHTML = '➕';
+            if(fab) fab.classList.remove('is-busy');
         }
     };
 
@@ -1405,7 +1426,7 @@
 
     window.tab = (id) => {
         if (state.measurementRequired && id !== 'measurements') {
-            alert("⚠️ Bu ay için ölçüm zorunludur! Lütfen önce ölçüm kaydedin.");
+            alert("Bu ay için ölçüm zorunludur! Lütfen önce ölçüm kaydedin.");
             return;
         }
         document.querySelectorAll('.tab-content').forEach(c => {
@@ -1443,7 +1464,7 @@
                 document.getElementById('timer-val').innerText =
                     `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
             }, 1000);
-            btn.innerText = '⏸ Durdur';
+            btn.innerText = 'Durdur';
             btn.style.background = 'var(--danger)';
         }
     };
@@ -1709,7 +1730,7 @@
         const last = window.getLastPerformance(exName);
         if (last) {
             hintDiv.style.display = 'block';
-            hintDiv.innerHTML = `💡 Son Performans: <b>${last.weight}kg x ${last.reps}</b> (${new Date(last.date).toLocaleDateString('tr-TR')})`;
+            hintDiv.innerHTML = `Son Performans: <b>${last.weight}kg x ${last.reps}</b> (${new Date(last.date).toLocaleDateString('tr-TR')})`;
         } else {
             hintDiv.style.display = 'none';
         }
@@ -1761,7 +1782,7 @@
             const altGrupIsimleri = Object.keys(altGruplar).sort();
             if (altGrupIsimleri.length === 0) return;
 
-            let anaIcon = ana === 'Yiyecekler' ? '🍽️' : (ana === 'İçecekler' ? '🥤' : '💊');
+            let anaIcon = ana === 'Yiyecekler' ? '' : (ana === 'İçecekler' ? '' : '');
             html += `<h2 style="margin-top: 1.5rem; margin-bottom: 0.5rem; color: var(--primary); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem;">${anaIcon} ${ana}</h2>`;
 
             altGrupIsimleri.forEach(alt => {
@@ -1784,14 +1805,14 @@
                                     <h3>${escapeHtml(f.ad)}</h3>
                                     <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:0.5rem;">${escapeHtml(f.porsiyon)}</p>
                                     <div style="display:flex; justify-content:space-between; font-size:0.8rem; padding:0.5rem; background:rgba(0,0,0,0.2); border-radius:4px;">
-                                        <span>🔥 ${f.kalori} kcal</span>
+                                        <span>${f.kalori} kcal</span>
                                         <span>P: ${f.protein}g</span>
                                         <span>C: ${f.karbonhidrat}g</span>
                                         <span>Y: ${f.yag}g</span>
                                     </div>
                                     <div class="card-actions mt-1">
-                                        <button class="btn-edit" onclick="window.editFood(${f.id})">✎</button>
-                                        <button class="btn-delete" onclick="window.deleteFood(${f.id})">🗑</button>
+                                        <button class="btn-edit" aria-label="Düzenle" onclick="window.editFood(${f.id})"></button>
+                                        <button class="btn-delete" aria-label="Sil" onclick="window.deleteFood(${f.id})"></button>
                                     </div>
                                 </div>
                             `).join('')}
@@ -1873,11 +1894,11 @@
                     <div><div class="workout-meta">${new Date(d.tarih).toLocaleDateString('tr-TR')}</div><h3>${escapeHtml(d.plan_adi)}</h3></div>
                     <div class="card-actions">
                         <button class="btn-edit" onclick="event.stopPropagation(); window.cloneDietPlan(${d.id})" title="Bu planı kopyala">⧉</button>
-                        <button class="btn-delete" onclick="event.stopPropagation(); window.deleteDietPlan(${d.id})">🗑</button>
+                        <button class="btn-delete" aria-label="Sil" onclick="event.stopPropagation(); window.deleteDietPlan(${d.id})"></button>
                     </div>
                 </div>
                 <div style="display:flex; gap:0.5rem; font-size:0.8rem; margin-top:0.5rem; color:var(--text-dim);">
-                    <span>🔥 ${tCal.toFixed(0)} kcal</span>|<span>P: ${tPro.toFixed(0)}g</span>|<span>C: ${tCarb.toFixed(0)}g</span>|<span>Y: ${tFat.toFixed(0)}g</span>
+                    <span>${tCal.toFixed(0)} kcal</span>|<span>P: ${tPro.toFixed(0)}g</span>|<span>C: ${tCarb.toFixed(0)}g</span>|<span>Y: ${tFat.toFixed(0)}g</span>
                 </div>
             </div>
         `}).join('');
@@ -1955,7 +1976,7 @@
         div.innerHTML = `
             <div class="form-group" style="margin-bottom:0.5rem;">
                 <div style="position:relative;">
-                    <input type="text" class="ex-select m-search w-full" placeholder="Besin Ara (Örn: Tavuk, Yulaf)..." oninput="window.searchFoodForDiet(this)" autocomplete="off" value="${vals.searchName || ''}">
+                    <input type="text" class="ex-select m-search w-full" aria-label="Besin ara" placeholder="Besin Ara (Örn: Tavuk, Yulaf)..." oninput="window.searchFoodForDiet(this)" autocomplete="off" value="${vals.searchName || ''}">
                     <input type="hidden" class="m-name" required value="${vals.foodId || ''}">
                     <div class="m-search-results" style="display:none; position:absolute; top:100%; left:0; width:100%; background:var(--bg); border:1px solid var(--border); border-radius:4px; max-height:200px; overflow-y:auto; z-index:1000; box-shadow: 0 4px 6px rgba(0,0,0,0.3);"></div>
                 </div>
@@ -1963,27 +1984,27 @@
             <div class="grid" style="grid-template-columns: 2fr 1.5fr 1.5fr 1.5fr 1.5fr 1fr; gap:0.5rem; align-items:end;">
                 <div class="form-group" style="margin:0;">
                     <label style="display:block; margin-bottom:0.1rem; color:var(--text-dim); font-size:0.7rem;">Miktar</label>
-                    <input type="number" step="0.1" class="m-qty w-full" value="${vals.qty || ''}" required oninput="window.updateMealRow(this)" style="padding:0.4rem; border-radius:4px;" ${vals.baseAmount ? `data-base-amount="${vals.baseAmount}" data-base-cal="${vals.baseCal}" data-base-pro="${vals.basePro}" data-base-carb="${vals.baseCarb}" data-base-fat="${vals.baseFat}"` : ''}>
+                    <input type="number" step="0.1" class="m-qty w-full" aria-label="Miktar" value="${vals.qty || ''}" required oninput="window.updateMealRow(this)" style="padding:0.4rem; border-radius:4px;" ${vals.baseAmount ? `data-base-amount="${vals.baseAmount}" data-base-cal="${vals.baseCal}" data-base-pro="${vals.basePro}" data-base-carb="${vals.baseCarb}" data-base-fat="${vals.baseFat}"` : ''}>
                 </div>
                 <div class="form-group" style="margin:0;">
                     <label style="display:block; margin-bottom:0.1rem; color:var(--text-dim); font-size:0.7rem;">Kcal</label>
-                    <input type="number" step="0.1" class="m-cal w-full" value="${vals.cal || ''}" required oninput="window.updateDietTotals()" style="padding:0.4rem; border-radius:4px;">
+                    <input type="number" step="0.1" class="m-cal w-full" aria-label="Kalori" value="${vals.cal || ''}" required oninput="window.updateDietTotals()" style="padding:0.4rem; border-radius:4px;">
                 </div>
                 <div class="form-group" style="margin:0;">
                     <label style="display:block; margin-bottom:0.1rem; color:var(--text-dim); font-size:0.7rem;">Pro(g)</label>
-                    <input type="number" step="0.1" class="m-pro w-full" value="${vals.pro || ''}" required oninput="window.updateDietTotals()" style="padding:0.4rem; border-radius:4px;">
+                    <input type="number" step="0.1" class="m-pro w-full" aria-label="Protein" value="${vals.pro || ''}" required oninput="window.updateDietTotals()" style="padding:0.4rem; border-radius:4px;">
                 </div>
                 <div class="form-group" style="margin:0;">
                     <label style="display:block; margin-bottom:0.1rem; color:var(--text-dim); font-size:0.7rem;">Karb(g)</label>
-                    <input type="number" step="0.1" class="m-carb w-full" value="${vals.carb || ''}" required oninput="window.updateDietTotals()" style="padding:0.4rem; border-radius:4px;">
+                    <input type="number" step="0.1" class="m-carb w-full" aria-label="Karbonhidrat" value="${vals.carb || ''}" required oninput="window.updateDietTotals()" style="padding:0.4rem; border-radius:4px;">
                 </div>
                 <div class="form-group" style="margin:0;">
                     <label style="display:block; margin-bottom:0.1rem; color:var(--text-dim); font-size:0.7rem;">Yağ(g)</label>
-                    <input type="number" step="0.1" class="m-fat w-full" value="${vals.fat || ''}" required oninput="window.updateDietTotals()" style="padding:0.4rem; border-radius:4px;">
+                    <input type="number" step="0.1" class="m-fat w-full" aria-label="Yağ" value="${vals.fat || ''}" required oninput="window.updateDietTotals()" style="padding:0.4rem; border-radius:4px;">
                 </div>
                 <div class="form-group" style="margin:0; text-align:right; display:flex; justify-content:flex-end; gap:0.4rem;">
-                    <button type="button" onclick="window.duplicateFoodRow(this)" style="background:transparent; border:none; color:var(--primary-color, #4CAF50); font-size:1.2rem; cursor:pointer; padding:0; line-height:1;" title="Bu besini kopyala">⧉</button>
-                    <button type="button" onclick="this.parentElement.parentElement.parentElement.remove(); window.updateDietTotals();" style="background:transparent; border:none; color:#ff4444; font-size:1.2rem; cursor:pointer; padding:0; line-height:1;" title="Sil">×</button>
+                    <button type="button" aria-label="Satırı kopyala" onclick="window.duplicateFoodRow(this)" style="background:transparent; border:none; color:var(--primary-color, #4CAF50); font-size:1.2rem; cursor:pointer; padding:0; line-height:1;" title="Bu besini kopyala">⧉</button>
+                    <button type="button" aria-label="Satırı sil" onclick="this.parentElement.parentElement.parentElement.remove(); window.updateDietTotals();" style="background:transparent; border:none; color:#ff4444; font-size:1.2rem; cursor:pointer; padding:0; line-height:1;" title="Sil">×</button>
                 </div>
             </div>
         `;
@@ -2027,11 +2048,11 @@
         wrapper.style.position = 'relative';
 
         wrapper.innerHTML = `
-            <button type="button" class="btn-delete" onclick="this.parentElement.remove(); window.updateDietTotals();" style="position:absolute; top:5px; right:5px; width:24px; height:24px; padding:0; display:flex; align-items:center; justify-content:center;">×</button>
+            <button type="button" class="btn-delete" aria-label="Öğünü kaldır" onclick="this.parentElement.remove(); window.updateDietTotals();" style="position:absolute; top:5px; right:5px; width:24px; height:24px; padding:0; display:flex; align-items:center; justify-content:center;">×</button>
 
             <div class="form-group" style="margin-bottom:0.8rem; padding-right: 30px;">
                 <label style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Öğün Adı</label>
-                <select class="m-meal-name w-full" required style="font-weight:bold;">
+                <select class="m-meal-name w-full" aria-label="Öğün" required style="font-weight:bold;">
                     <option value="Kahvaltı">Kahvaltı</option>
                     <option value="Öğle Yemeği">Öğle Yemeği</option>
                     <option value="Akşam Yemeği">Akşam Yemeği</option>
@@ -2069,7 +2090,7 @@
             resultsContainer.innerHTML = matches.map(f => `
                 <div style="padding:0.5rem; border-bottom:1px solid rgba(255,255,255,0.05); cursor:pointer; font-size:0.8rem;" onclick="window.selectFoodForDiet(this, ${f.id}, ${jsAttr(f.ad)})">
                     <strong>${escapeHtml(f.ad)}</strong><br>
-                    <span style="color:var(--text-dim); font-size:0.7rem;">${escapeHtml(f.tip || 'Yemek')} - ${escapeHtml(f.porsiyon)} | 🔥${f.kalori} P:${f.protein} C:${f.karbonhidrat} Y:${f.yag}</span>
+                    <span style="color:var(--text-dim); font-size:0.7rem;">${escapeHtml(f.tip || 'Yemek')} - ${escapeHtml(f.porsiyon)} | ${f.kalori} P:${f.protein} C:${f.karbonhidrat} Y:${f.yag}</span>
                 </div>
             `).join('');
         }
@@ -2224,7 +2245,7 @@
                 <div style="margin-bottom: 1.5rem; padding: 1.2rem; background: rgba(0, 242, 254, 0.05); border: 1px solid var(--primary); border-radius: 12px; text-align: center;">
                     <div style="color:var(--text-dim); font-size: 0.85rem; margin-bottom: 0.5rem;">Günlük Toplam Makrolar</div>
                     <div style="font-size: 1.2rem; font-weight: bold; color: #fff;">
-                        🔥 ${grandCal.toFixed(0)} <span style="font-size:0.8rem; color:var(--text-dim); font-weight:normal;">kcal</span> &nbsp;|&nbsp;
+                        ${grandCal.toFixed(0)} <span style="font-size:0.8rem; color:var(--text-dim); font-weight:normal;">kcal</span> &nbsp;|&nbsp;
                         P: <span style="color:var(--primary);">${grandPro.toFixed(0)}g</span> &nbsp;|&nbsp;
                         C: <span style="color:var(--accent);">${grandCarb.toFixed(0)}g</span> &nbsp;|&nbsp;
                         Y: <span style="color:#ffb142;">${grandFat.toFixed(0)}g</span>
@@ -2237,9 +2258,9 @@
                 html += `
                 <div class="meal-group" style="margin-bottom: 1.2rem; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); overflow: hidden;">
                     <div style="background: rgba(255,255,255,0.03); padding: 0.7rem 1rem; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
-                        <strong style="color: var(--text);">🍽️ ${escapeHtml(mealName)}</strong>
+                        <strong style="color: var(--text);">${escapeHtml(mealName)}</strong>
                         <span style="font-size: 0.75rem; color: var(--text-dim);">
-                            🔥 ${data.tCal.toFixed(1)} | P: ${data.tPro.toFixed(1)} | C: ${data.tCarb.toFixed(1)} | Y: ${data.tFat.toFixed(1)}
+                            ${data.tCal.toFixed(1)} | P: ${data.tPro.toFixed(1)} | C: ${data.tCarb.toFixed(1)} | Y: ${data.tFat.toFixed(1)}
                         </span>
                     </div>
                     <div style="padding: 0.5rem 1rem;">
@@ -2380,7 +2401,7 @@
             }).join('');
         }
 
-        const icons = { 'Fitness': '💪', 'Karate': '🥋', 'Basketbol': '🏀', 'Yoga': '🧘', 'Fonksiyonel Egzersiz': '⚡' };
+        
         grid.innerHTML = state.members.length ? state.members.map(m => {
             const memberSchedule = state.schedules.filter(item => item.member_id == m.id)
                 .sort((a, b) => a.day_of_week - b.day_of_week || a.start_time.localeCompare(b.start_time));
@@ -2390,13 +2411,13 @@
             return `
             <div class="card member-card" onclick="window.openProfile(${m.id})">
                 <div class="member-card-top">
-                    <div class="member-avatar">${icons[m.brans] || '👤'}</div>
+                    <div class="member-avatar">${escapeHtml(((m.ad_soyad || '').trim().charAt(0) || '?').toLocaleUpperCase('tr-TR'))}</div>
                     <span class="member-card-arrow">→</span>
                 </div>
                 <small class="member-card-trainer">Eğitmen: ${escapePortalText(m.trainer_id === 'burak-ozcan' ? 'Burak Özcan' : 'Atanmadı')}</small>
                 <h3>${escapeHtml(m.ad_soyad)}</h3>
                 <p class="member-branch">${escapeHtml(m.brans || 'Branş belirtilmemiş')}</p>
-                <p class="member-schedule-summary">🗓️ ${escapePortalText(scheduleText)}</p>
+                <p class="member-schedule-summary">${escapePortalText(scheduleText)}</p>
                 <div class="card-actions">
                     <button class="btn-edit" onclick="event.stopPropagation(); window.editMember(${m.id})">Düzenle</button>
                     <button class="btn-delete" onclick="event.stopPropagation(); window.deleteMember(${m.id})">Sil</button>
@@ -2661,7 +2682,7 @@
         const { error } = await dataService.mutate('weekly_program_schedule', 'upsert', entries);
         if (error) {
             handleError(error, 'Schedule save');
-            alert(`Çizelge kaydedilemedi: ${error.message}`);
+            alert(`Çizelge kaydedilemedi: ${trMessage(error)}`);
             return;
         }
         await Promise.all(rows.map((row, index) => createScheduleNotification({
@@ -2676,7 +2697,7 @@
             const { error: memberError } = await dataService.mutate('uyeler', 'update', { brans: primaryBranch }, { id: memberId });
             if (memberError) {
                 handleError(memberError, 'Schedule member branch update');
-                alert(`Seans kaydedildi ancak üye branşı güncellenemedi: ${memberError.message}`);
+                alert(`Seans kaydedildi ancak üye branşı güncellenemedi: ${trMessage(memberError)}`);
             }
         }
         await sync();
@@ -2690,7 +2711,7 @@
         const { error } = await dataService.mutate('weekly_program_schedule', 'delete', null, { id });
         if (error) {
             handleError(error, 'Schedule delete');
-            alert(`Seans silinemedi: ${error.message}`);
+            alert(`Seans silinemedi: ${trMessage(error)}`);
             return;
         }
         if (deletedEntry) {
@@ -2860,8 +2881,8 @@
                                 <h3>${escapeHtml(ex.ad)}</h3>
                                 <div class="tags-container">${tagsHtml}</div>
                                 <div class="card-actions mt-1">
-                                    <button class="btn-edit" onclick="window.editExercise(${ex.id})">✎</button>
-                                    <button class="btn-delete" onclick="window.deleteExercise(${ex.id})">🗑</button>
+                                    <button class="btn-edit" aria-label="Düzenle" onclick="window.editExercise(${ex.id})"></button>
+                                    <button class="btn-delete" aria-label="Sil" onclick="window.deleteExercise(${ex.id})"></button>
                                 </div>
                             </div>
                         `}).join('')}
@@ -2897,8 +2918,8 @@
                             <div class="card" onclick="window.showProgramDetail(${p.id})">
                                 <h3>${escapeHtml(p.program_adi)}</h3>
                                 <div class="card-actions">
-                                    <button class="btn-edit" onclick="event.stopPropagation(); window.editProgram(${p.id})">✎</button>
-                                    <button class="btn-delete" onclick="event.stopPropagation(); window.deleteProgram(${p.id})">🗑 Sil</button>
+                                    <button class="btn-edit" aria-label="Düzenle" onclick="event.stopPropagation(); window.editProgram(${p.id})"></button>
+                                    <button class="btn-delete" onclick="event.stopPropagation(); window.deleteProgram(${p.id})">Sil</button>
                                 </div>
                             </div>
                         `).join('')}
@@ -2917,10 +2938,10 @@
         container.innerHTML = myM.map(m => `
             <div class="card mt-1" onclick="window.showMeasurementDetail(${m.id})" style="cursor:pointer; background: rgba(0, 128, 255, 0.05); border: 1px solid rgba(0, 128, 255, 0.2);">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <h3 style="color: var(--accent);">🫀 ${new Date(m.tarih).toLocaleDateString('tr-TR')}</h3>
+                    <h3 style="color: var(--accent);">${new Date(m.tarih).toLocaleDateString('tr-TR')}</h3>
                     <div class="card-actions">
-                        <button class="btn-edit" onclick="event.stopPropagation(); window.editCardioTest(${m.id})">✎</button>
-                        <button class="btn-delete" onclick="event.stopPropagation(); window.deleteMeasurement(${m.id})">🗑</button>
+                        <button class="btn-edit" aria-label="Düzenle" onclick="event.stopPropagation(); window.editCardioTest(${m.id})"></button>
+                        <button class="btn-delete" aria-label="Sil" onclick="event.stopPropagation(); window.deleteMeasurement(${m.id})"></button>
                     </div>
                 </div>
                 <p>VO2 Max: ${m.vo2max || '--'} ml/kg/min | RHR: ${m.rhr || '--'} bpm | MHR: ${m.mhr || '--'} bpm</p>
@@ -2990,8 +3011,8 @@
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <h3>${new Date(m.tarih).toLocaleDateString('tr-TR')}</h3>
                     <div class="card-actions">
-                        <button class="btn-edit" onclick="event.stopPropagation(); window.editMeasurement(${m.id})">✎</button>
-                        <button class="btn-delete" onclick="event.stopPropagation(); window.deleteMeasurement(${m.id})">🗑</button>
+                        <button class="btn-edit" aria-label="Düzenle" onclick="event.stopPropagation(); window.editMeasurement(${m.id})"></button>
+                        <button class="btn-delete" aria-label="Sil" onclick="event.stopPropagation(); window.deleteMeasurement(${m.id})"></button>
                     </div>
                 </div>
                 <p>Kilo: ${m.weight ?? '--'}kg | Yağ: %${m.fat ?? '--'}</p>
@@ -3011,7 +3032,7 @@
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <div><div class="workout-meta">${new Date(w.tarih).toLocaleDateString('tr-TR')}</div><h3>${escapeHtml(w.sablon)}</h3></div>
                     <div class="card-actions">
-                        <button class="btn-delete" onclick="event.stopPropagation(); window.deleteWorkout(${w.id})">🗑</button>
+                        <button class="btn-delete" aria-label="Sil" onclick="event.stopPropagation(); window.deleteWorkout(${w.id})"></button>
                     </div>
                 </div>
             </div>
@@ -3028,8 +3049,8 @@
             <div class="doc-card">
                 <div class="doc-info"><h4>${escapeHtml(d.adi)}</h4><span>${escapeHtml(d.tip || 'Dosya')}</span></div>
                 <div class="doc-actions">
-                    <button onclick="window.viewDocument(${jsAttr(d.yol)})" class="btn-view">👁</button>
-                    <button onclick="window.deleteDocument(${d.id}, ${jsAttr(d.yol)})" class="btn-delete">🗑</button>
+                    <button onclick="window.viewDocument(${jsAttr(d.yol)})" class="btn-view" aria-label="Görüntüle"></button>
+                    <button onclick="window.deleteDocument(${d.id}, ${jsAttr(d.yol)})" class="btn-delete" aria-label="Sil"></button>
                 </div>
             </div>
         `).join('');
@@ -3038,8 +3059,8 @@
             <div class="doc-card">
                 <div class="doc-info"><h4>${escapeHtml(f.name.split('_').slice(1).join('_') || f.name)}</h4><span>Bulut</span></div>
                 <div class="doc-actions">
-                    <button onclick="window.viewDocument(${jsAttr(`${state.activeMemberId}/${f.name}`)})" class="btn-view">👁</button>
-                    <button onclick="window.deleteOnlyCloudDoc(${jsAttr(`${state.activeMemberId}/${f.name}`)})" class="btn-delete">🗑</button>
+                    <button onclick="window.viewDocument(${jsAttr(`${state.activeMemberId}/${f.name}`)})" class="btn-view" aria-label="Görüntüle"></button>
+                    <button onclick="window.deleteOnlyCloudDoc(${jsAttr(`${state.activeMemberId}/${f.name}`)})" class="btn-delete" aria-label="Sil"></button>
                 </div>
             </div>
         `).join('');
@@ -3080,7 +3101,7 @@
         const { error } = await dataService.mutate('uyeler', 'upsert', m);
         if (error) {
             console.error('[Member save] Supabase error:', error);
-            alert(`Üye kaydedilemedi: ${error.message}`);
+            alert(`Üye kaydedilemedi: ${trMessage(error)}`);
             return;
         }
         window.pushToUndoLog(existingId ? 'UPDATE' : 'INSERT', 'uyeler', oldData, m, `Üye: ${m.ad_soyad}`);
@@ -3149,7 +3170,7 @@
         const { error } = await dataService.mutate('master_egzersizler', 'upsert', newData);
         if (error) {
             console.error('[Exercise save] Supabase error:', error);
-            alert(`Egzersiz kaydedilemedi: ${error.message}`);
+            alert(`Egzersiz kaydedilemedi: ${trMessage(error)}`);
             return;
         }
         const oldData = existingId ? state.exercises.find(ex => ex.id == existingId) : null;
@@ -3477,19 +3498,19 @@ window.editMeasurement = (id) => {
             <div class="grid" style="grid-template-columns: 2fr 2fr 1.5fr 2fr 1.5fr; gap:0.5rem; align-items:end;">
                 <div class="form-group" style="margin:0;">
                     <label style="display:block; margin-bottom:0.1rem; color:var(--text-dim); font-size:0.7rem;">Ağırlık (kg)</label>
-                    <input type="number" step="0.5" class="s-weight" required style="width:100%; text-align:center; padding:0.4rem; border-radius:4px;" value="${vals.weight || ''}">
+                    <input type="number" step="0.5" class="s-weight" aria-label="Ağırlık (kg)" required style="width:100%; text-align:center; padding:0.4rem; border-radius:4px;" value="${vals.weight || ''}">
                 </div>
                 <div class="form-group" style="margin:0;">
                     <label style="display:block; margin-bottom:0.1rem; color:var(--text-dim); font-size:0.7rem;">Tekrar</label>
-                    <input type="number" class="s-reps" required style="width:100%; text-align:center; padding:0.4rem; border-radius:4px;" value="${vals.reps || ''}">
+                    <input type="number" class="s-reps" aria-label="Tekrar" required style="width:100%; text-align:center; padding:0.4rem; border-radius:4px;" value="${vals.reps || ''}">
                 </div>
                 <div class="form-group" style="margin:0;">
                     <label style="display:block; margin-bottom:0.1rem; color:var(--text-dim); font-size:0.7rem;">Süre(sn)</label>
-                    <input type="number" class="s-sure" style="width:100%; text-align:center; padding:0.4rem; border-radius:4px;" value="${vals.sure || ''}">
+                    <input type="number" class="s-sure" aria-label="Süre (sn)" style="width:100%; text-align:center; padding:0.4rem; border-radius:4px;" value="${vals.sure || ''}">
                 </div>
                 <div class="form-group" style="margin:0;">
                     <label style="display:block; margin-bottom:0.1rem; color:var(--text-dim); font-size:0.7rem;">Tip</label>
-                    <select class="s-tip w-full" style="padding:0.4rem; font-size:0.75rem; border-radius:4px;">
+                    <select class="s-tip w-full" aria-label="Set tipi" style="padding:0.4rem; font-size:0.75rem; border-radius:4px;">
                         <option value="Normal">Normal</option>
                         <option value="İzometrik">İzometrik</option>
                         <option value="Egzantrik">Egzantrik</option>
@@ -3499,8 +3520,8 @@ window.editMeasurement = (id) => {
                     </select>
                 </div>
                 <div class="form-group" style="margin:0; text-align:right; display:flex; justify-content:flex-end; gap:0.4rem;">
-                    <button type="button" onclick="window.duplicateSet(this)" style="background:transparent; border:none; color:var(--primary-color, #4CAF50); font-size:1.2rem; cursor:pointer; padding:0; line-height:1;" title="Bu seti kopyala">⧉</button>
-                    <button type="button" onclick="this.parentElement.parentElement.parentElement.remove()" style="background:transparent; border:none; color:#ff4444; font-size:1.2rem; cursor:pointer; padding:0; line-height:1;" title="Sil">×</button>
+                    <button type="button" aria-label="Seti kopyala" onclick="window.duplicateSet(this)" style="background:transparent; border:none; color:var(--primary-color, #4CAF50); font-size:1.2rem; cursor:pointer; padding:0; line-height:1;" title="Bu seti kopyala">⧉</button>
+                    <button type="button" aria-label="Seti sil" onclick="this.parentElement.parentElement.parentElement.remove()" style="background:transparent; border:none; color:#ff4444; font-size:1.2rem; cursor:pointer; padding:0; line-height:1;" title="Sil">×</button>
                 </div>
             </div>
         `;
@@ -3541,11 +3562,11 @@ window.editMeasurement = (id) => {
         wrapper.style.position = 'relative';
 
         wrapper.innerHTML = `
-            <button type="button" class="btn-delete" onclick="this.parentElement.remove()" style="position:absolute; top:5px; right:5px; width:24px; height:24px; padding:0; display:flex; align-items:center; justify-content:center;">×</button>
+            <button type="button" class="btn-delete" aria-label="Egzersizi kaldır" onclick="this.parentElement.remove()" style="position:absolute; top:5px; right:5px; width:24px; height:24px; padding:0; display:flex; align-items:center; justify-content:center;">×</button>
 
             <div class="form-group" style="margin-bottom:0.8rem; padding-right: 30px;">
                 <label style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;">Egzersiz</label>
-                <select class="ex-select s-name w-full" required style="font-weight:bold;">
+                <select class="ex-select s-name w-full" aria-label="Egzersiz" required style="font-weight:bold;">
                     <option value="">Seç...</option>
                     ${state.exercises.map(ex => `<option value="${escapeHtml(ex.ad)}">${escapeHtml(ex.ad)}</option>`).join('')}
                 </select>
@@ -3680,11 +3701,11 @@ window.editMeasurement = (id) => {
         div.className = 'set-row-wrapper';
         div.innerHTML = `
             <div class="set-row">
-                <select class="p-ex-name" required>
+                <select class="p-ex-name" aria-label="Egzersiz" required>
                     <option value="">Egzersiz Seç...</option>
                     ${state.exercises.map(ex => `<option value="${escapeHtml(ex.ad)}" ${ex.ad === name ? 'selected' : ''}>${escapeHtml(ex.ad)}</option>`).join('')}
                 </select>
-                <button type="button" class="btn-delete" onclick="this.parentElement.parentElement.remove()">×</button>
+                <button type="button" class="btn-delete" aria-label="Egzersizi kaldır" onclick="this.parentElement.parentElement.remove()">×</button>
             </div>
         `;
         container.appendChild(div);
@@ -3720,7 +3741,7 @@ window.editMeasurement = (id) => {
             document.getElementById('detail-title').innerText = p.program_adi;
             document.getElementById('detail-body').innerHTML = `
                 <ul class="m-list">
-                    ${details.map(d => `<li>💪 ${escapeHtml(d.ad)}</li>`).join('')}
+                    ${details.map(d => `<li>${escapeHtml(d.ad)}</li>`).join('')}
                 </ul>
                 <button class="btn-primary mt-1 w-full" onclick="window.loadProgramToWorkout(${p.id})">Bu Programı Başlat</button>
             `;
@@ -3799,7 +3820,7 @@ window.editMeasurement = (id) => {
                     hint.style.fontSize = '0.7rem';
                     hint.style.color = 'var(--accent)';
                     hint.style.marginTop = '0.3rem';
-                    hint.innerText = `💡 Son Performans: ${lastWeight}kg x ${lastReps}`;
+                    hint.innerText = `Son Performans: ${lastWeight}kg x ${lastReps}`;
                     lastContainer.appendChild(hint);
                 }
             }
@@ -3836,7 +3857,7 @@ window.editMeasurement = (id) => {
             if (m.bmr || m.vo2max || m.rhr) {
                 cardioHtml = `
                     <div style="margin-bottom:1rem; padding-bottom:1rem; border-bottom:1px solid rgba(255,255,255,0.1);">
-                        <h4 style="margin-bottom: 0.5rem; color: var(--accent);">🫀 Kardiyo & Metabolizma</h4>
+                        <h4 style="margin-bottom: 0.5rem; color: var(--accent);">Kardiyo & Metabolizma</h4>
                         <div class="grid" style="grid-template-columns: 1fr 1fr; gap:0.5rem;">
                             ${m.bmr ? `<div class="stat-card"><span>BMR (Bazal Met.)</span><h3>${m.bmr} kcal</h3></div>` : ''}
                             ${m.vo2max ? `<div class="stat-card"><span>VO2 Max</span><h3>${m.vo2max}</h3></div>` : ''}
@@ -3859,7 +3880,7 @@ window.editMeasurement = (id) => {
 
                 advancedHtml = `
                     <div style="margin-bottom:1rem; padding-bottom:1rem; border-bottom:1px solid rgba(255,255,255,0.1);">
-                        <h4 style="margin-bottom: 0.5rem; color: var(--accent);">📊 Analiz</h4>
+                        <h4 style="margin-bottom: 0.5rem; color: var(--accent);">Analiz</h4>
                         <div class="grid" style="grid-template-columns: 1fr 1fr; gap:0.5rem;">
                             ${bmiHtml}
                             <div class="stat-card"><span>Yağ Kütlesi</span><h3>${fatMass} kg</h3></div>
@@ -3885,7 +3906,7 @@ window.editMeasurement = (id) => {
             if (asymmetries.length > 0) {
                 symmetryHtml = `
                     <div style="margin-top:1rem; padding: 1rem; background: rgba(255,165,0,0.1); border: 1px solid orange; border-radius: 8px;">
-                        <h4 style="color: orange; margin-bottom: 0.5rem;">⚠️ Simetri Analizi (>0.5cm)</h4>
+                        <h4 style="color: orange; margin-bottom: 0.5rem;">Simetri Analizi (>0.5cm)</h4>
                         <ul style="margin:0; padding-left: 1rem; font-size:0.9rem; color: var(--text);">${asymmetries.join('')}</ul>
                     </div>`;
             }
@@ -3938,7 +3959,7 @@ window.editMeasurement = (id) => {
             html += `
             <div class="exercise-group" style="margin-bottom: 1.2rem; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); overflow: hidden;">
                 <div style="background: rgba(255,255,255,0.03); padding: 0.7rem 1rem; font-weight: bold; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--text);">
-                    💪 ${escapeHtml(egzersizAdi)}
+                    ${escapeHtml(egzersizAdi)}
                 </div>
                 <div style="padding: 0.5rem 1rem;">
                     <table style="width: 100%; font-size: 0.85rem; text-align: left; border-collapse: collapse;">
@@ -3956,7 +3977,7 @@ window.editMeasurement = (id) => {
             sets.forEach((s, index) => {
                 const setNo = s.set_no || (index + 1);
                 const tipBadge = (s.tip && s.tip !== 'Normal') ? `<span style="background:var(--primary-color, #4CAF50); color:#000; padding:2px 6px; border-radius:4px; font-size:0.65rem; font-weight:bold;">${escapeHtml(s.tip)}</span>` : '';
-                const sureText = s.sure ? `<span style="color:var(--text-dim); font-size:0.75rem; margin-left: 4px;">⏱️ ${escapeHtml(s.sure)}s</span>` : '';
+                const sureText = s.sure ? `<span style="color:var(--text-dim); font-size:0.75rem; margin-left: 4px;">${escapeHtml(s.sure)}s</span>` : '';
 
                 html += `
                             <tr style="border-bottom: 1px dashed rgba(255,255,255,0.05);">
@@ -4018,7 +4039,7 @@ window.editMeasurement = (id) => {
             }
         } catch (e) {
             handleError(e, 'DeleteMember files');
-            alert(`Danışanın belgeleri buluttan silinemedi: ${e.message}. Danışan silinmedi, lütfen tekrar deneyin.`);
+            alert(`Danışanın belgeleri buluttan silinemedi: ${trMessage(e)}. Danışan silinmedi, lütfen tekrar deneyin.`);
             return;
         }
         try {
@@ -4027,7 +4048,7 @@ window.editMeasurement = (id) => {
             if (!data?.length) throw new Error('kayıt bulunamadı veya yetki yok');
         } catch (e) {
             handleError(e, 'DeleteMember');
-            alert(`Danışan silinemedi: ${e.message}`);
+            alert(`Danışan silinemedi: ${trMessage(e)}`);
             return;
         }
         try { await sync(); } catch (e) { handleError(e, 'DeleteMember sync'); }
@@ -4054,7 +4075,7 @@ window.editMeasurement = (id) => {
             await window.scanStorageForDocs();
         } catch (e) {
             handleError(e, 'DeleteCloudDoc');
-            alert(`Döküman silinemedi: ${e.message}`);
+            alert(`Döküman silinemedi: ${trMessage(e)}`);
         }
     };
 
@@ -4090,7 +4111,7 @@ window.editMeasurement = (id) => {
             await sync();
             alert("Döküman yüklendi!");
             e.target.reset();
-        } catch (err) { alert("Hata: " + err.message); }
+        } catch (err) { alert("Hata: " + trMessage(err)); }
     };
 
     window.deleteDocument = async (id, path) => {
@@ -4104,7 +4125,7 @@ window.editMeasurement = (id) => {
             if (!data?.length) throw new Error('kayıt bulunamadı veya yetki yok');
         } catch (e) {
             handleError(e, 'DeleteDoc');
-            alert(`Döküman silinemedi: ${e.message}`);
+            alert(`Döküman silinemedi: ${trMessage(e)}`);
             return;
         }
         if (oldData) window.pushToUndoLog('DELETE', 'dokumanlar', oldData, null, `Döküman Silindi: ${oldData.adi}`);
@@ -4113,7 +4134,7 @@ window.editMeasurement = (id) => {
             if (error) throw error;
         } catch (e) {
             handleError(e, 'DeleteDocFile');
-            alert(`Döküman kaydı silindi ancak dosya buluttan silinemedi: ${e.message}. Bulut listesinden tekrar silmeyi deneyin.`);
+            alert(`Döküman kaydı silindi ancak dosya buluttan silinemedi: ${trMessage(e)}. Bulut listesinden tekrar silmeyi deneyin.`);
         }
         try { await sync(); } catch (e) { handleError(e, 'DeleteDoc sync'); }
     };
@@ -4164,7 +4185,7 @@ window.editMeasurement = (id) => {
 
         if (needsMeasurement) {
             state.measurementRequired = true;
-            alert("📅 Bu ay için ölçümünüz eksik! Lütfen devam etmeden önce güncel ölçümlerinizi girin.");
+            alert("Bu ay için ölçümünüz eksik! Lütfen devam etmeden önce güncel ölçümlerinizi girin.");
             window.nav('profile-view'); window.tab('measurements');
         } else {
             state.measurementRequired = false;
@@ -4192,8 +4213,8 @@ window.editMeasurement = (id) => {
         const includeFoods = foodsCheckbox ? foodsCheckbox.checked : true;
 
         let results = [];
-        if (includeMembers) state.members.filter(m => m.ad_soyad.toLowerCase().includes(keyword) || m.brans.toLowerCase().includes(keyword)).forEach(m => results.push({ type: 'Member', data: m }));
-        if (includeProgs) state.programs.filter(p => p.program_adi.toLowerCase().includes(keyword)).forEach(p => results.push({ type: 'Program', data: p }));
+        if (includeMembers) state.members.filter(m => (m.ad_soyad || '').toLowerCase().includes(keyword) || (m.brans || '').toLowerCase().includes(keyword)).forEach(m => results.push({ type: 'Member', data: m }));
+        if (includeProgs) state.programs.filter(p => (p.program_adi || '').toLowerCase().includes(keyword)).forEach(p => results.push({ type: 'Program', data: p }));
         if (includeWorkouts) {
             const token = state.searchToken = (state.searchToken || 0) + 1;
             let found = state.workouts.filter(w => (w.sablon || '').toLowerCase().includes(keyword)); // offline: what is cached
@@ -4232,20 +4253,20 @@ window.editMeasurement = (id) => {
         if (results.length === 0) { container.innerHTML = '<div class="no-results">Eşleşen sonuç bulunamadı.</div>'; return; }
 
         let html = `<div class="grid">${results.map(r => {
-            if (r.type === 'Member') return `<div class="card" onclick="window.openProfile(${r.data.id})"><h3>👤 ${escapeHtml(r.data.ad_soyad)}</h3><p>${escapeHtml(r.data.brans)}</p></div>`;
-            if (r.type === 'Program') return `<div class="card" onclick="window.showProgramDetail(${r.data.id})"><h3>📋 ${escapeHtml(r.data.program_adi)}</h3></div>`;
-            if (r.type === 'Workout') return `<div class="card" onclick="window.showWorkoutDetail(${r.data.id})"><h3>🏋️ ${escapeHtml(r.data.sablon)}</h3><p>${new Date(r.data.tarih).toLocaleDateString('tr-TR')}</p></div>`;
+            if (r.type === 'Member') return `<div class="card" onclick="window.openProfile(${r.data.id})"><h3>${escapeHtml(r.data.ad_soyad)}</h3><p>${escapeHtml(r.data.brans)}</p></div>`;
+            if (r.type === 'Program') return `<div class="card" onclick="window.showProgramDetail(${r.data.id})"><h3>${escapeHtml(r.data.program_adi)}</h3></div>`;
+            if (r.type === 'Workout') return `<div class="card" onclick="window.showWorkoutDetail(${r.data.id})"><h3>${escapeHtml(r.data.sablon)}</h3><p>${new Date(r.data.tarih).toLocaleDateString('tr-TR')}</p></div>`;
             if (r.type === 'Exercise') {
                 const g = window.safeJSONParse(r.data.gruplar, {});
-                return `<div class="card" onclick="window.editExercise(${r.data.id})"><h3>💪 ${escapeHtml(r.data.ad)}</h3><p>${escapeHtml(g.bodyPart || '')} ${g.muscles ? '- ' + escapeHtml(g.muscles.join(', ')) : ''}</p></div>`;
+                return `<div class="card" onclick="window.editExercise(${r.data.id})"><h3>${escapeHtml(r.data.ad)}</h3><p>${escapeHtml(g.bodyPart || '')} ${g.muscles ? '- ' + escapeHtml(g.muscles.join(', ')) : ''}</p></div>`;
             }
             if (r.type === 'Food') {
-                return `<div class="card" onclick="window.editFood(${r.data.id})"><h3>🍏 ${escapeHtml(r.data.ad)}</h3><p>${escapeHtml(r.data.tip || 'Yemek')} - 🔥 ${escapeHtml(r.data.kalori)} kcal</p></div>`;
+                return `<div class="card" onclick="window.editFood(${r.data.id})"><h3>${escapeHtml(r.data.ad)}</h3><p>${escapeHtml(r.data.tip || 'Yemek')} - ${escapeHtml(r.data.kalori)} kcal</p></div>`;
             }
         }).join('')}</div>`;
 
         if (totalCount > 100) {
-            html += `<div style="text-align:center; padding:1rem; color:var(--text-dim); font-size:0.8rem; grid-column: 1 / -1;">⚠️ Çok fazla sonuç bulundu (${totalCount}). Sadece ilk 100 sonuç gösteriliyor. Lütfen aramanızı daraltın.</div>`;
+            html += `<div style="text-align:center; padding:1rem; color:var(--text-dim); font-size:0.8rem; grid-column: 1 / -1;">Çok fazla sonuç bulundu (${totalCount}). Sadece ilk 100 sonuç gösteriliyor. Lütfen aramanızı daraltın.</div>`;
         }
 
         container.innerHTML = html;
@@ -4399,7 +4420,7 @@ window.editMeasurement = (id) => {
             const errIndex = results.findIndex(r => r.error);
             if (errIndex !== -1) {
                 console.error("Supabase Error Data:", results[errIndex].error);
-                throw new Error("Veritabanı hatası at index " + errIndex + ": " + results[errIndex].error.message);
+                throw new Error("Veritabanı hatası (kayıt " + (errIndex + 1) + "): " + trMessage(results[errIndex].error));
             }
 
             state.members = results[0].data || [];
@@ -4502,7 +4523,8 @@ window.editMeasurement = (id) => {
         // Setup fab (floating action button)
         const fab = document.createElement('button');
         fab.className = 'fab';
-        fab.innerHTML = '➕';
+        
+        fab.setAttribute('aria-label', 'Yeni kayıt ekle');
         // On a client's profile page: add a measurement. Anywhere else: add a client.
         // (state.activeMemberId stays set after leaving a profile, so it can't decide this alone.)
         fab.onclick = () => {

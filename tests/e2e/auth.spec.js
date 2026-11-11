@@ -21,6 +21,7 @@ test.describe('sign in and out', () => {
       await page.locator('#auth-password').fill('definitely-wrong-password');
       await page.locator('#modal-auth button[type="submit"]').click();
       await expect(page.locator('#auth-error')).not.toBeEmpty({ timeout: 15000 });
+      await expect(page.locator('#auth-error')).toHaveText('E-posta veya şifre hatalı.'); // Supabase says "Invalid login credentials"
       await expectSignedOut(page);
     }
   });

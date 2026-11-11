@@ -65,6 +65,8 @@ jobs:
         run: |
           mkdir -p _site
           cp index.html script.js data-service.js exercise-domain.js style.css sw.js favicon.svg manifest.webmanifest zen-wellness-logo.png zen-wellness-icon.png _site/
+          cp -r fonts _site/fonts
+          cp -r fonts _site/fonts
 
       - name: Upload static site
         uses: actions/upload-pages-artifact@v4

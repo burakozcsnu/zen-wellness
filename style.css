@@ -2171,3 +2171,39 @@ select:focus {
 .assessment-consent p + p { margin-top: 0.7rem; }
 .assessment-consent-check { align-items: flex-start; }
 .assessment-consent-check input { margin-top: 0.2rem; flex: none; }
+
+/* UI/UX audit (v1.3.120): readable small text, 44px touch targets, visible keyboard focus */
+body .sync-status, body .eyebrow, body .profile-heading .eyebrow { font-size: max(0.75rem, 12px); }
+body .btn-filter-toggle, body .btn-secondary { font-size: 0.875rem; }
+body .btn-logout, body .sidebar-actions .btn-logout, body .btn-delete { min-height: 44px; min-width: 44px; }
+.weekly-schedule-entry:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* Icons drawn with CSS masks (no emoji): edit, delete, view and the add button */
+.btn-edit::before, .btn-delete::before, .btn-view::before, .fab::before { content: ""; display: inline-block; width: 1.15em; height: 1.15em; vertical-align: -0.2em; background: currentColor; -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
+.btn-delete:not(:empty)::before { margin-right: 0.4em; }
+.btn-edit::before { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z'/%3E%3C/svg%3E"); }
+.btn-delete::before { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M8 6V4h8v2'/%3E%3Cpath d='M19 6l-1 14H6L5 6'/%3E%3Cpath d='M10 11v6M14 11v6'/%3E%3C/svg%3E"); }
+.btn-view::before { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E"); }
+.fab::before { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E"); width: 1em; height: 1em; vertical-align: 0; }
+.fab.is-busy { opacity: 0.5; pointer-events: none; }
+
+/* Layout fixes found by looking at screenshots */
+.btn-edit, .btn-view { min-width: 44px; min-height: 44px; }
+.close { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+body .btn-secondary, body .btn-primary, body .profile-edit-btn, body .schedule-add-row { min-height: 44px; }
+.modal button.btn-secondary, .modal-content > button, #p-exercise-rows + button { min-height: 44px; }
+body.member-portal-active #sync-status, body.member-portal-active #version-tag { display: none; }
+.member-portal-header .btn-logout { background: none; color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 0 1rem; font: inherit; cursor: pointer; }
+/* The sync pill sits at the bottom centre (the top covered the header buttons and modal close icons). */
+#sync-status { top: auto; bottom: 0.75rem; left: 50%; right: auto; transform: translateX(-50%); }
+body .btn-filter-toggle { background: var(--surface-raised, #1b1b1b); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 0 1rem; min-height: 44px; cursor: pointer; }
+@media (max-width: 768px) {
+    #version-tag { display: none; }
+    /* On a phone the pill only appears when something is wrong, so it never covers content for nothing. */
+    #sync-status[data-status="online"], #sync-status[data-status="syncing"] { display: none; }
+}
+
+.field-label { display: block; margin: 0.7rem 0 0.25rem; color: var(--text-dim); font-size: 0.85rem; }
+.modal-content h2 { margin-bottom: 1rem; padding-right: 3rem; }
+.member-portal-header .btn-logout { white-space: nowrap; padding: 0 0.85rem; }
+.modal button { min-width: 44px; min-height: 44px; } /* rows added by the + buttons use small inline sizes */

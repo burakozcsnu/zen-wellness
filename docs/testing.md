@@ -57,7 +57,14 @@ Every feature gets a row in the table below with the test that proves it. A feat
 | Live sync between two trainer windows (add, rename, delete) | `realtime.spec.js` | passing |
 | Heavy history: a client with 2,000 measurements shows the true latest one; dashboard figure equals the database | `tests/perf/frontend.spec.js` | passing |
 
-Still not covered: editing an existing workout or diet plan, exercise/food library management, programs ("Şablon"), cardio tests, the undo log, the trainer's data export/import, offline mode and the offline save queue through the UI (the queue itself has unit tests), the client-side data export, and notification-read marking.
+| Trainer edits a workout template, an exercise and a food; undo ("Geri Al") restores old values; a failed undo reports an error; search survives a client with no branch; an edit made offline waits in the queue and is saved on reconnect | `trainer-edits.spec.js` | passing (desktop + phone) |
+| Trainer controls without visible text (add button, search box, filter menus) have screen-reader names | `crawl.spec.js` | passing (desktop + phone) |
+| Every trainer view and form: controls at least 44 px and named (no placeholder-only fields), including the rows added by the + buttons | `crawl.spec.js`, `ui-rows.spec.js` | passing (desktop + phone) |
+| Client downloads their own data ("Verilerimi Dışa Aktar"): only their own rows | `trainer-edits.spec.js` | passing (desktop + phone) |
+
+Still not covered (UI/UX): focus order with a keyboard only, screen-reader reading order, dark/light system theme, real-device touch feel (owner checklist).
+
+Still not covered: editing an existing diet plan (the app has no edit for diet plans, only create and delete), cardio tests, importing data (the app has no import feature; only the client export exists), the offline queue's conflict and failure paths through the UI (covered by `tests/data-service.test.js` only).
 
 ## Bugs these tests found (2026-11-10)
 
@@ -67,8 +74,10 @@ Fixed:
 3. **The login form was cut off on short screens:** "Şifremi Unuttum" and the sign-up switch could not be reached on 720 px-high laptops or small phones. Fix: the login screen scrolls.
 4. **Clients with more than 1,000 rows lost data** and the trainer screen loaded every client's history at login (paged loading and per-client loading, see `docs/perf-baseline.md`).
 
-Open (visible Turkish text, needs the owner's approval before changing):
-5. **Raw English errors reach Turkish screens:** the notification opt-in shows the browser's message (for example "Registration failed - permission denied") and a failed sign-in shows Supabase's English text.
+Fixed in 1.3.120 (owner approved the Turkish text change):
+5. **Raw English errors reached Turkish screens** (failed sign-in, notification opt-in, save and delete alerts). Fix: `trMessage()` in `script.js` maps known Supabase and browser errors to Turkish; anything unknown shows a generic Turkish message and the detail stays in the console.
+6. **Global search crashed for everybody** when any client had no branch (`brans` empty). Fix: search tolerates empty names and branches.
+7. **"Geri Al" (undo) said "successfully undone" even when the database refused.** Fix: each undo step is checked, and a failure is reported.
 
 Design notes, not bugs: other profile tabs stay locked until the client has a measurement this month; the sign-up form has no name field (the onboarding wizard asks for it).
 
