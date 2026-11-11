@@ -6,8 +6,8 @@ if (!dbPassword) {
 }
 
 const client = new Client({
-  user: 'postgres.mdcvljbbnoxqsfwcjvqz',
-  host: 'aws-1-eu-central-1.pooler.supabase.com',
+  user: process.env.SUPABASE_DB_USER || 'postgres.mdcvljbbnoxqsfwcjvqz',
+  host: process.env.SUPABASE_DB_HOST || 'aws-1-eu-central-1.pooler.supabase.com',
   database: 'postgres',
   password: dbPassword,
   port: 6543,
@@ -182,6 +182,10 @@ async function migrate() {
       ALTER TABLE trainers
         ADD COLUMN IF NOT EXISTS auth_user_id UUID UNIQUE;
       CREATE INDEX IF NOT EXISTS uyeler_auth_user_id_idx ON uyeler (auth_user_id);
+      -- The app and the row level security policies filter these tables by member constantly.
+      CREATE INDEX IF NOT EXISTS olcumler_member_id_idx ON olcumler (member_id);
+      CREATE INDEX IF NOT EXISTS antrenmanlar_member_id_idx ON antrenmanlar (member_id);
+      CREATE INDEX IF NOT EXISTS dokumanlar_member_id_idx ON dokumanlar (member_id);
 
       DO $$
       BEGIN

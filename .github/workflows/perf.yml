@@ -1,0 +1,47 @@
+name: Performance
+
+# Heavy: seeds 50,000+ rows and ramps up to 100 concurrent users. Runs weekly and on demand,
+# against the separate "zen-test" Supabase project only (the tests refuse to run against production).
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ZEN_TESTDB_SUPABASE_URL: ${{ secrets.ZEN_TESTDB_SUPABASE_URL }}
+      ZEN_TESTDB_PUBLISHABLE_KEY: ${{ secrets.ZEN_TESTDB_PUBLISHABLE_KEY }}
+      ZEN_TESTDB_DB_USER: ${{ secrets.ZEN_TESTDB_DB_USER }}
+      ZEN_TESTDB_DB_HOST: ${{ secrets.ZEN_TESTDB_DB_HOST }}
+      ZEN_TESTDB_DB_PASSWORD: ${{ secrets.ZEN_TESTDB_DB_PASSWORD }}
+      ZEN_TESTDB_SECRET_KEY: ${{ secrets.ZEN_TESTDB_SECRET_KEY }}
+      ZEN_TESTDB_ADMIN_EMAIL: ${{ secrets.ZEN_TESTDB_ADMIN_EMAIL }}
+      ZEN_TESTDB_ADMIN_PASSWORD: ${{ secrets.ZEN_TESTDB_ADMIN_PASSWORD }}
+      ZEN_TESTDB_CLIENT_EMAIL: ${{ secrets.ZEN_TESTDB_CLIENT_EMAIL }}
+      ZEN_TESTDB_CLIENT_PASSWORD: ${{ secrets.ZEN_TESTDB_CLIENT_PASSWORD }}
+      ZEN_TESTDB_NEWCLIENT_EMAIL: ${{ secrets.ZEN_TESTDB_NEWCLIENT_EMAIL }}
+      ZEN_TESTDB_NEWCLIENT_PASSWORD: ${{ secrets.ZEN_TESTDB_NEWCLIENT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:seed
+      - run: npm run test:perf:seed
+      - run: npm run test:perf
+      - name: Extreme scale (500 members, 77,500 rows)
+        run: |
+          npm run test:perf:seed:extreme
+          PERF_SCALE=extreme npm run test:perf
+      - name: Remove perf data
+        if: ${{ always() }}
+        run: node scripts/seed-perf-data.js --clean

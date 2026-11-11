@@ -6,7 +6,7 @@
 
  document.addEventListener('DOMContentLoaded', () => {
     // --- CACHE BUSTER ---
-    const APP_VERSION = '1.3.118';
+    const APP_VERSION = '1.3.119';
     const vTag = document.getElementById('version-tag');
     if (vTag) vTag.innerText = `v${APP_VERSION} - Realtime Sync`;
     let activeLoginRole = 'admin';
@@ -211,6 +211,9 @@
 
     const supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
     const dataService = window.TrainerProDataService.create(supabase);
+    // Whole-table (or one member's) read in pages: the API caps one response at 1,000 rows. Same { data, error } shape as supabase.from().select().
+    const loadAll = (table, filters) => dataService.fetchAll(table, 1000, filters)
+        .then(data => ({ data, error: null })).catch(error => ({ data: null, error }));
     window.addEventListener('trainerpro-sync-queue', event => {
         const pending = event.detail?.pending || 0;
         if (pending > 0) setSyncStatus('syncing', `${pending} çevrimdışı işlem bekliyor`);
@@ -698,6 +701,19 @@
                             <div><span class="member-portal-muted">Nabız Rezervi</span><h3>${cardioData.hrr || '--'} bpm</h3></div>
                         </div>`;
                     })()}
+                    <h3 style="margin:1.5rem 0 1rem; font-size:1rem; color:var(--primary);">⌚ Akıllı Saat Verileri</h3>
+                    ${(() => {
+                        // Read-only. Latest value per metric_type; shows an empty state until the Watch pilot (S1-S5) sends data.
+                        const latest = new Map();
+                        (state.healthMetrics || []).forEach(item => {
+                            const current = latest.get(item.metric_type);
+                            if (!current || new Date(item.recorded_at) > new Date(current.recorded_at)) latest.set(item.metric_type, item);
+                        });
+                        if (!latest.size) return '<p class="member-portal-muted">Akıllı saat verileriniz bağlandığında burada görünecek.</p>';
+                        return `<div class="member-portal-grid" style="background:rgba(255,255,255,0.02); padding:1rem; border-radius:12px;">${[...latest.values()].map(item => `
+                            <div><span class="member-portal-muted">${escapePortalText(item.metric_type)}</span><h3>${escapePortalText(item.value)} ${escapePortalText(item.unit)}</h3>
+                            <span class="member-portal-muted">${escapePortalText(new Date(item.recorded_at).toLocaleDateString('tr-TR'))}</span></div>`).join('')}</div>`;
+                    })()}
                 </section>
 
                 <section class="member-portal-card member-portal-section" data-portal-section="workouts">
@@ -794,7 +810,18 @@
         });
     };
 
+    // DRAFT consent text: must be reviewed by a lawyer (roadmap L1) before real clients see it.
+    // Bump CONSENT_VERSION whenever the wording changes; the version is saved with every receipt.
+    const CONSENT_VERSION = 'taslak-1';
+    const CONSENT_TITLE = 'Kişisel Verilerin İşlenmesi ve Açık Rıza (TASLAK)';
+    const CONSENT_TEXT = [
+        'Zen Wellness Club olarak, antrenman ve beslenme hizmetini size göre hazırlamak amacıyla sağlık geçmişiniz, alerjileriniz, boyunuz ve kilonuz gibi özel nitelikli kişisel verilerinizi işleyeceğiz.',
+        'Verileriniz yalnızca size atanan antrenör tarafından görülür. Veriler, hizmet sağlayıcımız aracılığıyla yurt dışındaki (Almanya) sunucularda saklanır ve 6698 sayılı KVKK kapsamında korunur.',
+        'Açık rızanızı istediğiniz zaman geri çekebilir ve verilerinizin silinmesini talep edebilirsiniz.'
+    ];
+
     const assessmentQuestions = [
+        { key: 'kvkk_riza', title: CONSENT_TITLE, type: 'consent', required: true },
         { key: 'ad_soyad', title: 'Adınız ve soyadınız nedir?', type: 'text', label: 'Ad Soyad', required: true },
         { key: 'telefon', title: 'Size hangi cep telefonu numarasından ulaşabiliriz?', type: 'tel', label: 'Cep telefonu', required: true },
         { key: 'dogum_tarihi', title: 'Doğum tarihiniz nedir?', type: 'date', label: 'Doğum tarihi', required: true },
@@ -855,7 +882,14 @@
 
         const value = getAssessmentValue(question);
         let control = '';
-        if (question.type === 'body') {
+        if (question.type === 'consent') {
+            control = `
+                <div class="assessment-consent">${CONSENT_TEXT.map(paragraph => `<p>${escapePortalText(paragraph)}</p>`).join('')}</div>
+                <label class="assessment-option assessment-consent-check">
+                    <input id="assessment-consent" type="checkbox" ${value?.accepted ? 'checked' : ''}>
+                    <span>Okudum, anladım ve sağlık verilerimin işlenmesine açık rızam var.</span>
+                </label>`;
+        } else if (question.type === 'body') {
             control = `
                 <div class="grid" style="grid-template-columns:1fr 1fr; gap:0.65rem; margin-top:1.15rem;">
                     <label>Boy (cm)<input id="assessment-height" type="number" min="80" max="250" step="0.1" value="${escapePortalText(value.height)}" required></label>
@@ -887,6 +921,11 @@
 
     const captureAssessmentAnswer = () => {
         const question = assessmentQuestions[state.assessmentStep];
+        if (question.type === 'consent') {
+            if (!document.getElementById('assessment-consent')?.checked) return false;
+            state.assessmentAnswers[question.key] = { accepted: true, version: CONSENT_VERSION };
+            return true;
+        }
         if (question.type === 'body') {
             const height = parseFloat(document.getElementById('assessment-height')?.value);
             const weight = parseFloat(document.getElementById('assessment-weight')?.value);
@@ -905,6 +944,33 @@
         if (!value) return false;
         state.assessmentAnswers[question.key] = value;
         return true;
+    };
+
+    // Saves the consent receipt as a text file in the client's own documents folder + a dokumanlar row.
+    // Runs BEFORE any health data is saved; returns an error message or null.
+    const saveConsentReceipt = async (member, answers) => {
+        if (state.assessmentConsentSaved === member.id) return null;
+        if (!navigator.onLine) return 'Rızanızı kaydetmek için internet bağlantısı gereklidir.';
+        const acceptedAt = new Date().toISOString();
+        const receipt = [
+            'ZEN WELLNESS CLUB - KVKK AÇIK RIZA KAYDI',
+            `Metin sürümü: ${CONSENT_VERSION}`,
+            `Üye: ${answers.ad_soyad || member.ad_soyad} (${member.id})`,
+            `Onay tarihi (UTC): ${acceptedAt}`,
+            '',
+            CONSENT_TITLE,
+            ...CONSENT_TEXT
+        ].join('\n');
+        const filePath = `${member.id}/kvkk_riza_${Date.now()}.txt`;
+        const { error: uploadError } = await supabase.storage.from('dokumanlar')
+            .upload(filePath, new Blob([receipt], { type: 'text/plain;charset=utf-8' }), { contentType: 'text/plain;charset=utf-8' });
+        if (uploadError) { handleError(uploadError, 'Consent receipt upload'); return 'Rıza kaydı oluşturulamadı. Lütfen tekrar deneyin.'; }
+        const { error: dbError } = await supabase.from('dokumanlar')
+            .insert({ member_id: member.id, adi: 'KVKK Açık Rıza Kaydı', yol: filePath, tip: 'KVKK' });
+        if (dbError) { handleError(dbError, 'Consent receipt row'); return 'Rıza kaydı oluşturulamadı. Lütfen tekrar deneyin.'; }
+        state.assessmentConsentSaved = member.id;
+        answers.kvkk_riza = { accepted: true, version: CONSENT_VERSION, accepted_at: acceptedAt };
+        return null;
     };
 
     window.showMemberAssessment = (member) => {
@@ -941,6 +1007,11 @@
 
         const member = state.assessmentMember;
         const answers = state.assessmentAnswers;
+        const consentError = await saveConsentReceipt(member, answers);
+        if (consentError) {
+            if (error) error.textContent = consentError;
+            return;
+        }
         const birthDate = new Date(`${answers.dogum_tarihi}T00:00:00`);
         const today = new Date();
         let age = today.getFullYear() - birthDate.getFullYear();
@@ -1002,18 +1073,18 @@
 
             // Sonra o member'in ID'siyle güvenli bir şekilde filtreleyerek sadece ONUN verilerini çek
             const [measurementsResult, workoutsResult, dietsResult, documentsResult, schedulesResult, pushResult, deliveriesResult, notificationsResult, attendanceResult, completionsResult, healthMetricsResult, workoutSessionsResult] = await Promise.all([
-                supabase.from('olcumler').select('*').eq('member_id', member.id),
-                supabase.from('antrenmanlar').select('*').eq('member_id', member.id),
-                supabase.from('beslenme_planlari').select('*').eq('member_id', member.id),
-                supabase.from('dokumanlar').select('*').eq('member_id', member.id),
-                supabase.from('weekly_program_schedule').select('*').eq('member_id', member.id),
+                loadAll('olcumler', { member_id: member.id }),
+                loadAll('antrenmanlar', { member_id: member.id }),
+                loadAll('beslenme_planlari', { member_id: member.id }),
+                loadAll('dokumanlar', { member_id: member.id }),
+                loadAll('weekly_program_schedule', { member_id: member.id }),
                 supabase.from('push_subscriptions').select('id,endpoint').eq('member_id', member.id),
                 supabase.from('push_reminder_deliveries').select('id,subscription_id,schedule_id,reminder_type,delivered_at').order('delivered_at', { ascending: false }).limit(50),
                 supabase.from('schedule_notifications').select('id,schedule_id,action,message,created_at,read_at').eq('member_id', member.id).order('created_at', { ascending: false }).limit(50),
-                supabase.from('schedule_attendance').select('id,schedule_id,occurrence_date,status').eq('member_id', member.id),
-                supabase.from('workout_completions').select('id,workout_id,exercise_index,completion_date,completed').eq('member_id', member.id),
-                supabase.from('health_metrics').select('*').eq('member_id', member.id),
-                supabase.from('workout_sessions').select('*').eq('member_id', member.id)
+                loadAll('schedule_attendance', { member_id: member.id }),
+                loadAll('workout_completions', { member_id: member.id }),
+                loadAll('health_metrics', { member_id: member.id }),
+                loadAll('workout_sessions', { member_id: member.id })
             ]);
             const result = [measurementsResult, workoutsResult, dietsResult, documentsResult, schedulesResult, pushResult, deliveriesResult]
                 .find(item => item.error);
@@ -2221,6 +2292,7 @@
     function refreshAll() {
         try {
             renderMembers();
+            if (state.activeMemberId) renderProfileHeader(state.activeMemberId);
             renderWeeklySchedule();
             renderAssessmentAdmin();
             renderWorkoutHistory();
@@ -2245,7 +2317,7 @@
         const overview = document.getElementById('member-overview');
         if (overview) {
             const branchCount = new Set(state.members.map(member => member.brans).filter(Boolean)).size;
-            const measuredCount = new Set(state.measurements.map(measurement => measurement.member_id)).size;
+            const measuredCount = state.measuredMemberIds ? state.measuredMemberIds.size : '…'; // loaded in the background
             const today = new Date();
             const todayDay = today.getDay() || 7;
             const todayMinutes = (today.getHours() * 60) + today.getMinutes();
@@ -2624,7 +2696,7 @@
         if (deletedEntry) {
             await createScheduleNotification({
                 memberId: deletedEntry.member_id,
-                scheduleId: id,
+                scheduleId: null, // the row is already gone: a reference to it is rejected by the database
                 action: 'deleted',
                 message: `${getScheduleDayName(deletedEntry.day_of_week)} günü ${deletedEntry.start_time.slice(0, 5)} ${deletedEntry.branch} seansı kaldırıldı.`
             });
@@ -2687,7 +2759,8 @@
             ['Beslenme alışkanlıkları', answers.beslenme_aliskanliklari || member.beslenme_aliskanliklari],
             ['Hareket alışkanlıkları', answers.hareket_aliskanliklari || member.hareket_aliskanliklari],
             ['Spor geçmişi', answers.spor_gecmisi || member.spor_gecmisi],
-            ['Hizmet beklentileri', answers.beklentiler || member.beklentiler]
+            ['Hizmet beklentileri', answers.beklentiler || member.beklentiler],
+            ['KVKK açık rıza', answers.kvkk_riza?.accepted ? `Verildi · ${answers.kvkk_riza.version} · ${answers.kvkk_riza.accepted_at ? new Date(answers.kvkk_riza.accepted_at).toLocaleString('tr-TR') : '--'}` : 'Kayıt yok']
         ];
         document.getElementById('detail-title').textContent = `Akıllı Değerlendirme · ${member.ad_soyad}`;
         document.getElementById('detail-body').innerHTML = `
@@ -3924,6 +3997,7 @@ window.editMeasurement = (id) => {
     window.deleteMember = async (id) => {
         const member = state.members.find(m => m.id == id);
         if (!member) return;
+        await loadMemberData(id); // so the counts in the confirmation are the real ones
         const count = list => (list || []).filter(item => item.member_id == id).length;
         const answer = prompt(`${member.ad_soyad} ve tüm verileri kalıcı olarak silinecek: ${count(state.measurements)} ölçüm, ${count(state.workouts)} antrenman, ${count(state.diets)} beslenme planı, ${count(state.documents)} belge, haftalık program ve bildirim kayıtları. Bu işlem geri alınamaz. Onaylamak için danışanın adını yazın:`);
         if (answer === null) return;
@@ -4046,21 +4120,30 @@ window.editMeasurement = (id) => {
 
     // --- MEMBER PROFILE SYNC ---
 
-    window.openProfile = (id) => {
-        state.activeMemberId = id;
+    // Name and one-line summary at the top of a client's profile. Also called after every sync, so edits show up at once.
+    const renderProfileHeader = (id) => {
         const m = state.members.find(x => x.id == id);
-        if (m) {
-            document.getElementById('prof-name').innerText = m.ad_soyad;
-            const meta = document.getElementById('prof-meta');
-            if (meta) {
-                const details = [m.brans, m.cinsiyet].filter(Boolean);
-                const schedule = state.schedules.filter(item => item.member_id == id)
-                    .sort((a, b) => a.day_of_week - b.day_of_week || a.start_time.localeCompare(b.start_time))
-                    .map(item => `${getScheduleDayName(item.day_of_week)} ${item.start_time.slice(0, 5)}`);
-                if (schedule.length) details.push(`Program: ${schedule.join(', ')}`);
-                meta.innerText = details.length ? details.join(' · ') : 'Profil detaylarını ve gelişimi yönetin.';
-            }
+        if (!m) return;
+        document.getElementById('prof-name').innerText = m.ad_soyad;
+        const meta = document.getElementById('prof-meta');
+        if (meta) {
+            const details = [m.brans, m.cinsiyet].filter(Boolean);
+            const schedule = state.schedules.filter(item => item.member_id == id)
+                .sort((a, b) => a.day_of_week - b.day_of_week || a.start_time.localeCompare(b.start_time))
+                .map(item => `${getScheduleDayName(item.day_of_week)} ${item.start_time.slice(0, 5)}`);
+            if (schedule.length) details.push(`Program: ${schedule.join(', ')}`);
+            meta.innerText = details.length ? details.join(' · ') : 'Profil detaylarını ve gelişimi yönetin.';
         }
+    };
+
+    window.openProfile = async (id) => {
+        state.activeMemberId = id;
+        renderProfileHeader(id);
+
+        setSyncStatus('syncing', 'Üye verileri yükleniyor...');
+        await loadMemberData(id);
+        if (state.activeMemberId != id) return; // the user opened someone else while this was loading
+        setSyncStatus(navigator.onLine ? 'online' : 'offline', navigator.onLine ? 'Çevrimiçi' : 'Çevrimdışı (Son Önbellek Kullanılıyor)');
 
         const myM = state.measurements.filter(m => m.member_id == id).sort((a,b) => new Date(b.tarih) - new Date(a.tarih));
         const now = new Date();
@@ -4094,7 +4177,7 @@ window.editMeasurement = (id) => {
         if (state.activeMemberId) window.editMember(state.activeMemberId);
     };
 
-    window.performGlobalSearch = () => {
+    window.performGlobalSearch = async () => {
         const keyword = document.getElementById('global-search-keyword').value.toLowerCase();
         if (!keyword) { window.nav(state.navHistory[state.navHistory.length - 2] || 'members-view'); return; }
         window.nav('search-results-view', false);
@@ -4111,7 +4194,22 @@ window.editMeasurement = (id) => {
         let results = [];
         if (includeMembers) state.members.filter(m => m.ad_soyad.toLowerCase().includes(keyword) || m.brans.toLowerCase().includes(keyword)).forEach(m => results.push({ type: 'Member', data: m }));
         if (includeProgs) state.programs.filter(p => p.program_adi.toLowerCase().includes(keyword)).forEach(p => results.push({ type: 'Program', data: p }));
-        if (includeWorkouts) state.workouts.filter(w => w.sablon.toLowerCase().includes(keyword)).forEach(w => results.push({ type: 'Workout', data: w }));
+        if (includeWorkouts) {
+            const token = state.searchToken = (state.searchToken || 0) + 1;
+            let found = state.workouts.filter(w => (w.sablon || '').toLowerCase().includes(keyword)); // offline: what is cached
+            if (navigator.onLine) {
+                const pattern = '%' + keyword.replace(/[%_\\]/g, match => '\\' + match) + '%';
+                const { data, error } = await supabase.from('antrenmanlar').select('*').ilike('sablon', pattern).order('tarih', { ascending: false }).limit(100);
+                if (token !== state.searchToken) return; // a newer search replaced this one
+                if (error) handleError(error, 'Workout search');
+                else {
+                    found = data || [];
+                    // The detail view reads workouts from state, so keep what was found.
+                    found.forEach(w => { if (!state.workouts.some(x => x.id == w.id)) state.workouts.push(w); });
+                }
+            }
+            found.forEach(w => results.push({ type: 'Workout', data: w }));
+        }
 
         if (includeExercises) {
             state.exercises.filter(ex => {
@@ -4204,6 +4302,68 @@ window.editMeasurement = (id) => {
         return false;
     }
 
+    // --- PER-MEMBER HISTORY ---
+    // History tables (measurements, workouts, diets, documents, health data, sessions) are loaded for ONE client when their
+    // profile is opened, not for everyone at login: login time no longer grows with the amount of history.
+    const MEMBER_HISTORY = [['olcumler', 'measurements'], ['antrenmanlar', 'workouts'], ['beslenme_planlari', 'diets'],
+        ['dokumanlar', 'documents'], ['health_metrics', 'healthMetrics'], ['workout_sessions', 'workoutSessions']];
+
+    // Adds the derived test values (age, resting HR, VO2 max, BMR...) that are not stored in the database.
+    const enrichMeasurements = (rows, members) => rows.map(m => {
+        // Restore test values from legacy columns
+        m.yas = m.l_leg;
+        m.rhr = m.r_leg;
+        m.cooper = m.hips;
+        const member = members.find(x => x.id == m.member_id);
+
+        // Recalculate derived metrics (BMR, MHR, HRR, VO2) so they exist in state for the dashboard
+        if (m.yas) {
+            m.mhr = Math.round(208 - (0.7 * m.yas));
+            if (m.rhr) m.hrr = m.mhr - m.rhr;
+        }
+        if (m.cooper) {
+            const gender = member ? member.cinsiyet || 'Erkek' : 'Erkek';
+            m.vo2max = gender === 'Kadın' ? (65.81 - (0.1847 * m.cooper)).toFixed(1) : (111.33 - (0.42 * m.cooper)).toFixed(1);
+        }
+        if (m.weight && m.yas && member && member.boy) {
+            const base = (10 * m.weight) + (6.25 * member.boy) - (5 * m.yas);
+            m.bmr = Math.round((member.cinsiyet || 'Erkek') === 'Kadın' ? base - 161 : base + 5);
+        }
+        return m;
+    });
+
+    // Replaces one client's history in state with fresh rows from the database. Offline: keeps the cached rows.
+    async function loadMemberData(memberId) {
+        if (!navigator.onLine) return false;
+        const results = await Promise.all(MEMBER_HISTORY.map(([table]) => loadAll(table, { member_id: memberId })));
+        const failed = results.find(result => result.error);
+        if (failed) { handleError(failed.error, 'Member history load'); return false; }
+        MEMBER_HISTORY.forEach(([, key], index) => {
+            const rows = results[index].data || [];
+            const others = state[key].filter(item => item.member_id != memberId);
+            state[key] = others.concat(key === 'measurements' ? enrichMeasurements(rows, state.members) : rows);
+            if (key === 'measurements' && state.measuredMemberIds) {
+                state.measuredMemberIds[rows.length ? 'add' : 'delete'](memberId);
+            }
+        });
+        return true;
+    }
+
+    // Dashboard figure "clients with a measurement": reads only member ids, in the background, once per page load.
+    async function loadMeasuredMembers() {
+        if (state.measuredMemberIds || state.measuredMembersLoading) return;
+        state.measuredMembersLoading = true;
+        try {
+            const rows = await dataService.fetchAll('olcumler', 1000, {}, 2, 'member_id');
+            state.measuredMemberIds = new Set(rows.map(row => row.member_id));
+            refreshAll();
+        } catch (error) {
+            handleError(error, 'Measured members load');
+        } finally {
+            state.measuredMembersLoading = false;
+        }
+    }
+
     async function sync() {
         const { data: sessionData } = await withAuthTimeout(
             supabase.auth.getSession(),
@@ -4228,22 +4388,13 @@ window.editMeasurement = (id) => {
         try {
 
             const results = await Promise.all([
-                supabase.from('uyeler').select('*'),
-                supabase.from('programlar').select('*'),
-                supabase.from('olcumler').select('*'),
-                supabase.from('antrenmanlar').select('*'),
-                supabase.from('dokumanlar').select('*'),
-                supabase.from('weekly_program_schedule').select('*'),
+                loadAll('uyeler'),
+                loadAll('programlar'),
+                loadAll('weekly_program_schedule'),
                 dataService.fetchAll('master_egzersizler').then(data => ({ data, error: null })).catch(error => ({ data: null, error })),
                 dataService.fetchAll('master_besinler').then(data => ({ data, error: null })).catch(error => ({ data: null, error })),
-                supabase.from('beslenme_planlari').select('*'),
-                supabase.from('health_metrics').select('*'),
-                supabase.from('workout_sessions').select('*'),
-                supabase.from('device_connections').select('*')
+                loadAll('device_connections')
             ]);
-
-
-
 
             const errIndex = results.findIndex(r => r.error);
             if (errIndex !== -1) {
@@ -4253,56 +4404,15 @@ window.editMeasurement = (id) => {
 
             state.members = results[0].data || [];
             state.programs = results[1].data || [];
-                        state.measurements = (results[2].data || []).map(m => {
-                // Restore test values from legacy columns
-                m.yas = m.l_leg;
-                m.rhr = m.r_leg;
-                m.cooper = m.hips;
-
-                // Recalculate derived metrics (BMR, MHR, HRR, VO2) so they exist in state for the dashboard
-                if (m.yas) {
-                    m.mhr = Math.round(208 - (0.7 * m.yas));
-                    if (m.rhr) m.hrr = m.mhr - m.rhr;
-                }
-
-                if (m.cooper) {
-                    const member = results[0].data.find(x => x.id == m.member_id);
-                    const gender = member ? member.cinsiyet || 'Erkek' : 'Erkek';
-                    if (gender === 'Kadın') {
-                        m.vo2max = (65.81 - (0.1847 * m.cooper)).toFixed(1);
-                    } else {
-                        m.vo2max = (111.33 - (0.42 * m.cooper)).toFixed(1);
-                    }
-                }
-
-                if (m.weight && m.yas) {
-                    const member = results[0].data.find(x => x.id == m.member_id);
-                    if (member && member.boy) {
-                        const gender = member.cinsiyet || 'Erkek';
-                        let bmr = 0;
-                        if (gender === 'Kadın') {
-                            bmr = (10 * m.weight) + (6.25 * member.boy) - (5 * m.yas) - 161;
-                        } else {
-                            bmr = (10 * m.weight) + (6.25 * member.boy) - (5 * m.yas) + 5;
-                        }
-                        m.bmr = Math.round(bmr);
-                    }
-                }
-
-                return m;
-            });
-            state.workouts = results[3].data || [];
-            state.documents = results[4].data || [];
-            state.schedules = results[5].data || [];
-            state.exercises = results[6].data || [];
-            state.foods = results[7].data || [];
-            state.diets = results[8].data || [];
-            state.healthMetrics = results[9].data || [];
-            state.workoutSessions = results[10].data || [];
-            state.deviceConnections = results[11].data || [];
-
+            state.schedules = results[2].data || [];
+            state.exercises = results[3].data || [];
+            state.foods = results[4].data || [];
+            state.deviceConnections = results[5].data || [];
+            // An open profile keeps showing fresh history after every sync (edits, live updates).
+            if (state.activeMemberId) await loadMemberData(state.activeMemberId);
 
             refreshAll();
+            loadMeasuredMembers();
             setSyncStatus('online', 'Senkronize edildi');
             window.setTimeout(() => {
                 if (navigator.onLine) setSyncStatus('online', 'Çevrimiçi');

@@ -6,8 +6,8 @@ if (!dbPassword) {
 }
 
 const client = new Client({
-  user: 'postgres.mdcvljbbnoxqsfwcjvqz',
-  host: 'aws-1-eu-central-1.pooler.supabase.com',
+  user: process.env.SUPABASE_DB_USER || 'postgres.mdcvljbbnoxqsfwcjvqz',
+  host: process.env.SUPABASE_DB_HOST || 'aws-1-eu-central-1.pooler.supabase.com',
   database: 'postgres',
   password: dbPassword,
   port: 6543,
@@ -43,6 +43,7 @@ async function migrate() {
         plan_adi TEXT,
         ogunler JSONB DEFAULT '[]'::jsonb
       );
+      CREATE INDEX IF NOT EXISTS beslenme_planlari_member_id_idx ON beslenme_planlari (member_id);
     `);
     console.log('beslenme_planlari table ensured.');
 

@@ -1,0 +1,18 @@
+# Copy to .env.test (git-ignored) in the repository folder. NEVER use production values here.
+# These point at the separate "zen-test" Supabase project (see docs/testing.md).
+ZEN_TESTDB_SUPABASE_URL=
+ZEN_TESTDB_PUBLISHABLE_KEY=
+# Used only by scripts/seed-test-db.js and the migrations to build the test database.
+ZEN_TESTDB_DB_USER=
+ZEN_TESTDB_DB_HOST=
+ZEN_TESTDB_DB_PASSWORD=
+ZEN_TESTDB_SECRET_KEY=
+# Fake accounts created by the seed script.
+ZEN_TESTDB_ADMIN_EMAIL=
+ZEN_TESTDB_ADMIN_PASSWORD=
+ZEN_TESTDB_CLIENT_EMAIL=
+ZEN_TESTDB_CLIENT_PASSWORD=
+ZEN_TESTDB_NEWCLIENT_EMAIL=
+ZEN_TESTDB_NEWCLIENT_PASSWORD=
+# Created and appended automatically by scripts/deploy-test-functions.js (the test function's CRON_SECRET).
+ZEN_TESTDB_CRON_SECRET=

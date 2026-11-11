@@ -1,0 +1,75 @@
+name: CI
+
+# Runs on every pull request and on pushes to non-main branches.
+# Never touches production: database tests use the separate "zen-test" Supabase project.
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Syntax check
+        run: |
+          for f in script.js data-service.js exercise-domain.js sw.js .supabase/*.js scripts/*.js; do node --check "$f"; done
+      - name: Unit tests
+        run: npm test
+
+  e2e:
+    needs: unit
+    runs-on: ubuntu-latest
+    # Fork PRs get no secrets; the job then skips instead of failing.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    env:
+      ZEN_TESTDB_SUPABASE_URL: ${{ secrets.ZEN_TESTDB_SUPABASE_URL }}
+      ZEN_TESTDB_PUBLISHABLE_KEY: ${{ secrets.ZEN_TESTDB_PUBLISHABLE_KEY }}
+      ZEN_TESTDB_DB_USER: ${{ secrets.ZEN_TESTDB_DB_USER }}
+      ZEN_TESTDB_DB_HOST: ${{ secrets.ZEN_TESTDB_DB_HOST }}
+      ZEN_TESTDB_DB_PASSWORD: ${{ secrets.ZEN_TESTDB_DB_PASSWORD }}
+      ZEN_TESTDB_SECRET_KEY: ${{ secrets.ZEN_TESTDB_SECRET_KEY }}
+      ZEN_TESTDB_ADMIN_EMAIL: ${{ secrets.ZEN_TESTDB_ADMIN_EMAIL }}
+      ZEN_TESTDB_ADMIN_PASSWORD: ${{ secrets.ZEN_TESTDB_ADMIN_PASSWORD }}
+      ZEN_TESTDB_CLIENT_EMAIL: ${{ secrets.ZEN_TESTDB_CLIENT_EMAIL }}
+      ZEN_TESTDB_CLIENT_PASSWORD: ${{ secrets.ZEN_TESTDB_CLIENT_PASSWORD }}
+      ZEN_TESTDB_NEWCLIENT_EMAIL: ${{ secrets.ZEN_TESTDB_NEWCLIENT_EMAIL }}
+      ZEN_TESTDB_NEWCLIENT_PASSWORD: ${{ secrets.ZEN_TESTDB_NEWCLIENT_PASSWORD }}
+      ZEN_TESTDB_CRON_SECRET: ${{ secrets.ZEN_TESTDB_CRON_SECRET }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Check test database secrets
+        run: test -n "$ZEN_TESTDB_SUPABASE_URL" || { echo "::error::ZEN_TESTDB_* secrets are not configured (see docs/testing.md)."; exit 1; }
+      - name: Build and seed the test database
+        run: npm run test:seed
+      - name: Integration tests (permissions matrix, migrations)
+        run: npm run test:integration
+      - run: npx playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

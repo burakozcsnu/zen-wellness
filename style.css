@@ -107,7 +107,7 @@
     color: var(--text);
 }
 
-* { margin:0; padding:0; box-sizing:border-box; font-family: 'Segoe UI', sans-serif; }
+* { margin:0; padding:0; box-sizing:border-box; }
 body { background: var(--bg); color: var(--text); overflow: hidden; }
 .app-wrapper { display: flex; height: 100vh; }
 
@@ -116,19 +116,19 @@ body { background: var(--bg); color: var(--text); overflow: hidden; }
 .logo { font-size: 1.6rem; font-weight: 800; letter-spacing: -1px; margin-bottom: 3rem; }
 .logo span { color: var(--primary); }
 nav { display: flex; flex-direction: column; gap: 0.5rem; flex-grow: 1; }
-.nav-btn { background: none; border: none; color: var(--text-dim); text-align: left; padding: 1rem; border-radius: 12px; cursor: pointer; transition: 0.3s; min-height: var(--touch-target); }
+.nav-btn { background: none; border: none; color: var(--text-dim); text-align: left; padding: 1rem; border-radius: 12px; cursor: pointer; transition: all var(--dur) var(--ease); min-height: var(--touch-target); }
 .nav-btn.active { background: rgba(0, 242, 254, 0.1); color: var(--primary); }
 .btn-undo { background: var(--danger); border: none; color: white; padding: 0.8rem; border-radius: 8px; width: 100%; cursor: pointer; font-weight: bold; }
 
 /* Content & Views */
 .content { flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; }
 .view { padding: 2.5rem; display: none; }
-.view.active { display: block; animation: fadeIn 0.4s ease; }
+.view.active { display: block; animation: fadeIn var(--dur-slow) var(--ease); }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; } }
 
 /* Global Search */
 .global-search-bar { position: sticky; top: 0; z-index: 1000; background: var(--surface); border-bottom: 1px solid var(--border); padding: 1rem 2.5rem; display: flex; gap: 1rem; align-items: center; backdrop-filter: blur(10px); }
-.btn-back { background: var(--border); color: white; border: none; padding: 0.8rem 1.2rem; border-radius: 10px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+.btn-back { background: var(--border); color: white; border: none; padding: 0.8rem 1.2rem; border-radius: 10px; cursor: pointer; font-weight: bold; transition: all var(--dur) var(--ease); }
 .btn-back:hover { background: var(--primary); color: black; }
 .search-main-area { display: flex; gap: 0.5rem; flex-grow: 1; position: relative; }
 input, select { background: var(--bg); border: 1px solid var(--border); color: white; padding: 0.8rem; border-radius: 10px; width: 100%; outline: none; }
@@ -137,9 +137,9 @@ input, select { background: var(--bg); border: 1px solid var(--border); color: w
 
 /* Profile & Tabs */
 .profile-tabs-nav { display: flex; flex-direction: row; flex-grow: 0; gap: 1rem; margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem; }
-.tab-btn { background: none; border: none; color: var(--text-dim); padding: 0.8rem 1.2rem; cursor: pointer; border-radius: 10px; transition: 0.3s; }
+.tab-btn { background: none; border: none; color: var(--text-dim); padding: 0.8rem 1.2rem; cursor: pointer; border-radius: 10px; transition: all var(--dur) var(--ease); }
 .tab-btn.active { background: var(--primary); color: black; font-weight: bold; }
-.tab-content { display: none; animation: fadeIn 0.4s ease; }
+.tab-content { display: none; animation: fadeIn var(--dur-slow) var(--ease); }
 .tab-content.active { display: block; }
 .profile-content-wrapper { background: rgba(255,255,255,0.01); border: 1px solid var(--border); padding: 2rem; border-radius: 24px; }
 
@@ -184,7 +184,7 @@ canvas#mainChart {
 
 /* Tables & Lists */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; }
-.card { background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; border-radius: 16px; position: relative; cursor: pointer; transition: 0.3s; }
+.card { background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; border-radius: 16px; position: relative; cursor: pointer; transition: all var(--dur) var(--ease); }
 .card:hover { border-color: var(--primary); }
 .m-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
 .m-table th, .m-table td { padding: 1rem; border-bottom: 1px solid var(--border); text-align: left; }
@@ -457,6 +457,12 @@ select, textarea {
 
 /* Minimal Slate visual system */
 :root {
+    --font: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-brand: Georgia, "Times New Roman", serif;
+    --ease: cubic-bezier(0.2, 0, 0, 1);
+    --dur-fast: 160ms;
+    --dur: 260ms;
+    --dur-slow: 400ms;
     --bg: #0d1117;
     --surface: #151b23;
     --surface-raised: #1b2430;
@@ -477,7 +483,7 @@ select, textarea {
     --radius-lg: 20px;
 }
 
-* { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+* { font-family: var(--font); }
 body { background: var(--bg); color: var(--text); }
 body::before {
     content: "";
@@ -488,7 +494,7 @@ body::before {
     z-index: -1;
 }
 button, input, select { font: inherit; }
-button { transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease, box-shadow 160ms ease; }
+button { transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
 button:active { transform: translateY(1px); }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
@@ -903,7 +909,7 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px 
     align-items: center;
     gap: 0.65rem;
     color: var(--primary);
-    font: 700 1rem Georgia, "Times New Roman", serif;
+    font: 700 1rem var(--font-brand);
     letter-spacing: 0.08em;
     text-transform: uppercase;
 }
@@ -1117,7 +1123,7 @@ body.member-portal-active > .app-wrapper {
         border-right: 1px solid var(--border-soft);
         border-bottom: 0;
         transform: translateX(-105%);
-        transition: transform 180ms ease;
+        transition: transform var(--dur-fast) var(--ease);
         box-shadow: var(--shadow-lg);
     }
     .sidebar.mobile-open {
@@ -1165,7 +1171,7 @@ body.member-portal-active > .app-wrapper {
         background: transparent;
         text-align: left;
         cursor: pointer;
-        font-family: Georgia, "Times New Roman", serif;
+        font-family: var(--font-brand);
         font-size: 1.08rem;
         font-weight: 700;
         letter-spacing: 0.08em;
@@ -1349,6 +1355,8 @@ body.member-portal-active > .app-wrapper {
     display: grid;
     place-items: center;
     align-content: center;
+    align-content: safe center; /* centred when it fits; when the form is taller than the screen, start at the top and scroll */
+    overflow-y: auto;
     gap: 1.4rem;
     background: #050505;
     color: #ffffff;
@@ -1387,7 +1395,7 @@ body.member-portal-active > .app-wrapper {
 .portal-roles {
     display: flex;
     gap: 0.75rem;
-    animation: roles-in 320ms ease both;
+    animation: roles-in var(--dur) var(--ease) both;
 }
 .splash-auth-panel {
     display: none;
@@ -1398,13 +1406,13 @@ body.member-portal-active > .app-wrapper {
     border: 1px solid rgba(228, 186, 148, 0.38);
     border-radius: 16px;
     box-shadow: 0 18px 45px rgba(0, 0, 0, 0.32);
-    animation: auth-panel-in 320ms ease both;
+    animation: auth-panel-in var(--dur) var(--ease) both;
 }
 .splash-auth-panel h2 {
     margin: 0;
     padding-right: 0;
     color: var(--primary);
-    font: 700 1.15rem Georgia, "Times New Roman", serif;
+    font: 700 1.15rem var(--font-brand);
     letter-spacing: 0.04em;
 }
 .splash-auth-panel form {
@@ -1495,7 +1503,7 @@ button,
 input,
 select,
 textarea {
-    font-family: Georgia, "Times New Roman", serif;
+    font-family: var(--font);
     font-weight: 400;
 }
 body * {
@@ -1518,7 +1526,7 @@ body,
     border-radius: 999px;
     font-size: 0.68rem;
     pointer-events: none;
-    transition: color 180ms ease, border-color 180ms ease;
+    transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 .sync-status[data-status="syncing"] {
     color: #e4ba94;
@@ -1554,7 +1562,7 @@ body,
     border: 1px solid var(--border-soft);
     border-radius: 22px;
     box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
-    animation: assessment-question-in 280ms ease both;
+    animation: assessment-question-in var(--dur) var(--ease) both;
 }
 .member-assessment-progress {
     display: flex;
@@ -1576,7 +1584,7 @@ body,
     height: 100%;
     background: var(--primary);
     border-radius: inherit;
-    transition: width 260ms ease;
+    transition: width var(--dur) var(--ease);
 }
 .member-assessment-question {
     margin-bottom: 1.25rem;
@@ -1814,7 +1822,7 @@ body,
     text-align: center;
     border: 1px solid var(--border);
     border-radius: 9px;
-    transition: 160ms ease;
+    transition: var(--dur-fast) var(--ease);
 }
 .schedule-choice input:checked + span {
     color: var(--bg);
@@ -1954,7 +1962,7 @@ body::before {
 .logo-wordmark,
 .mobile-wordmark {
     color: #e4ba94;
-    font-family: Georgia, "Times New Roman", serif;
+    font-family: var(--font-brand);
     font-weight: 600;
     letter-spacing: 0.045em;
     text-transform: uppercase;
@@ -2145,3 +2153,21 @@ select:focus {
     color: #ffffff;
     border-color: #a0a0a0;
 }
+
+/* Self-hosted Inter (latin + latin-ext covers Turkish ğ ş ı İ ç ö ü) */
+@font-face { font-family: Inter; font-style: normal; font-weight: 100 900; font-display: swap;
+    src: url("fonts/inter-latin-ext.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: Inter; font-style: normal; font-weight: 100 900; font-display: swap;
+    src: url("fonts/inter-latin.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+
+/* KVKK consent step in the assessment wizard */
+.assessment-consent { margin: 1.15rem 0 0.9rem; padding: 1rem 1.1rem; max-height: 38vh; overflow-y: auto; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-soft); color: var(--text-dim); font-size: 0.92rem; line-height: 1.55; }
+.assessment-consent p + p { margin-top: 0.7rem; }
+.assessment-consent-check { align-items: flex-start; }
+.assessment-consent-check input { margin-top: 0.2rem; flex: none; }

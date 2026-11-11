@@ -165,8 +165,10 @@ A task is done only when all of these are true:
 3. Nearby features still work (list what you tried).
 4. `git diff` has no secrets, debug logs or stray files.
 5. Tests and lint pass, if they exist.
+6. Every testing layer in `docs/testing.md` that applies was run: unit, integration, end to end, click-through, performance. UI changes are checked in a real browser, not only through the API.
 
-Report what you actually ran and what you could not verify. Never write "should work" or "fixed" without evidence.
+Report what you actually ran and what you could not verify. Never write "should work" or "fixed" without evidence. A skipped layer is named as skipped, never hidden.
+Tests run only against the `zen-test` project, never production. Load and performance tests are never aimed at production.
 
 ## B7. How to communicate
 

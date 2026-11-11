@@ -6,8 +6,8 @@ if (!dbPassword) {
 }
 
 const client = new Client({
-  user: 'postgres.mdcvljbbnoxqsfwcjvqz',
-  host: 'aws-1-eu-central-1.pooler.supabase.com',
+  user: process.env.SUPABASE_DB_USER || 'postgres.mdcvljbbnoxqsfwcjvqz',
+  host: process.env.SUPABASE_DB_HOST || 'aws-1-eu-central-1.pooler.supabase.com',
   database: 'postgres',
   password: dbPassword,
   port: 6543,
@@ -47,6 +47,9 @@ async function migrate() {
       await client.query(`DROP POLICY IF EXISTS "${table}_member_read" ON ${table};`);
       if (table === 'uyeler') {
         await client.query(`DROP POLICY IF EXISTS "uyeler_member_update" ON uyeler;`);
+      }
+      if (table === 'dokumanlar') {
+        await client.query(`DROP POLICY IF EXISTS "dokumanlar_member_consent_insert" ON dokumanlar;`);
       }
       if (table === 'olcumler') {
         await client.query(`DROP POLICY IF EXISTS "olcumler_member_insert" ON olcumler;`);
@@ -186,6 +189,21 @@ async function migrate() {
           AND uyeler.auth_user_id = auth.uid()
       ));
 
+      -- Clients may only ADD their own KVKK consent receipt (no update, no delete).
+      CREATE POLICY "dokumanlar_member_consent_insert"
+      ON dokumanlar
+      FOR INSERT
+      TO authenticated
+      WITH CHECK (
+        tip = 'KVKK'
+        AND starts_with(yol, member_id::text || '/kvkk_riza_')
+        AND EXISTS (
+          SELECT 1 FROM uyeler
+          WHERE uyeler.id = dokumanlar.member_id
+            AND uyeler.auth_user_id = auth.uid()
+        )
+      );
+
       CREATE POLICY "beslenme_planlari_member_read"
       ON beslenme_planlari
       FOR SELECT
@@ -272,31 +290,23 @@ async function migrate() {
           AND uyeler.auth_user_id = auth.uid()
       ));
 
-      CREATE POLICY "device_connections_member_access"
+      -- Clients may only READ their own device_connections; data arrives through the Edge Function (trainer/service role).
+      CREATE POLICY "device_connections_member_read"
       ON device_connections
-      FOR ALL
+      FOR SELECT
       TO authenticated
       USING (EXISTS (
-        SELECT 1 FROM uyeler
-        WHERE uyeler.id = device_connections.member_id
-          AND uyeler.auth_user_id = auth.uid()
-      ))
-      WITH CHECK (EXISTS (
         SELECT 1 FROM uyeler
         WHERE uyeler.id = device_connections.member_id
           AND uyeler.auth_user_id = auth.uid()
       ));
 
-      CREATE POLICY "health_metrics_member_access"
+      -- Clients may only READ their own health_metrics; data arrives through the Edge Function (trainer/service role).
+      CREATE POLICY "health_metrics_member_read"
       ON health_metrics
-      FOR ALL
+      FOR SELECT
       TO authenticated
       USING (EXISTS (
-        SELECT 1 FROM uyeler
-        WHERE uyeler.id = health_metrics.member_id
-          AND uyeler.auth_user_id = auth.uid()
-      ))
-      WITH CHECK (EXISTS (
         SELECT 1 FROM uyeler
         WHERE uyeler.id = health_metrics.member_id
           AND uyeler.auth_user_id = auth.uid()
@@ -356,6 +366,25 @@ async function migrate() {
         WHERE u.auth_user_id = auth.uid()
           AND u.id::text = (storage.foldername(name))[1]
       ));
+    `);
+
+    // Consent receipts: a client may upload ONLY a kvkk_riza_* file directly inside their own folder.
+    await client.query(`
+      DROP POLICY IF EXISTS "dokumanlar_storage_member_consent_insert" ON storage.objects;
+      CREATE POLICY "dokumanlar_storage_member_consent_insert"
+      ON storage.objects
+      FOR INSERT
+      TO authenticated
+      WITH CHECK (
+        bucket_id = 'dokumanlar'
+        AND array_length(storage.foldername(name), 1) = 1
+        AND starts_with(storage.filename(name), 'kvkk_riza_')
+        AND EXISTS (
+          SELECT 1 FROM public.uyeler u
+          WHERE u.auth_user_id = auth.uid()
+            AND u.id::text = (storage.foldername(name))[1]
+        )
+      );
     `);
 
     // Live sync: the trainer view listens for changes on these tables (REALTIME_TABLES in script.js).
@@ -421,7 +450,7 @@ async function migrate() {
       END $$;
     `);
 
-    const requiredPolicies = ['device_connections_member_access', 'health_metrics_member_access', 'workout_sessions_member_access'];
+    const requiredPolicies = ['device_connections_member_read', 'health_metrics_member_read', 'workout_sessions_member_access'];
     const policyResult = await client.query(
       `SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND policyname = ANY($1::text[])`,
       [requiredPolicies]

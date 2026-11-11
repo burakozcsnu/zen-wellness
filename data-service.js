@@ -177,19 +177,39 @@
             });
 
             const service = {
-                async fetchAll(table, pageSize = 1000) {
-                    const rows = [];
-                    let from = 0;
-                    while (true) {
-                        const { data, error } = await client
-                            .from(table)
-                            .select('*')
-                            .range(from, from + pageSize - 1);
-                        if (error) throw error;
-                        if (!data?.length) break;
-                        rows.push(...data);
-                        from += pageSize;
-                        if (data.length < pageSize) break;
+                // Reads a whole table (optionally one member's rows) page by page: the API returns at most 1,000 rows per request.
+                // The first page also returns the total, so the remaining pages can be fetched a few at a time.
+                async fetchAll(table, pageSize = 1000, filters = {}, parallel = 4, columns = '*') {
+                    const page = (from, withCount) => {
+                        let query = client.from(table).select(columns, withCount ? { count: 'exact' } : undefined);
+                        for (const [column, value] of Object.entries(filters)) query = query.eq(column, value);
+                        // Stable order: without it, pages can overlap or skip rows while data changes.
+                        return query.order('id').range(from, from + pageSize - 1);
+                    };
+                    const first = await page(0, true);
+                    if (first.error) throw first.error;
+                    const rows = [...(first.data || [])];
+                    if (rows.length < pageSize) return rows;
+                    // shortcut: without a total (null count) pages are read one at a time, never skipped
+                    const total = typeof first.count === 'number' ? first.count : Infinity;
+                    if (total === Infinity) {
+                        for (let from = pageSize; ; from += pageSize) {
+                            const { data, error } = await page(from, false);
+                            if (error) throw error;
+                            if (!data?.length) break;
+                            rows.push(...data);
+                            if (data.length < pageSize) break;
+                        }
+                        return rows;
+                    }
+                    const starts = [];
+                    for (let from = pageSize; from < total; from += pageSize) starts.push(from);
+                    for (let i = 0; i < starts.length; i += parallel) {
+                        const results = await Promise.all(starts.slice(i, i + parallel).map(from => page(from, false)));
+                        for (const { data, error } of results) {
+                            if (error) throw error;
+                            rows.push(...(data || []));
+                        }
                     }
                     return rows;
                 },
