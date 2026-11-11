@@ -60,6 +60,7 @@ Every feature gets a row in the table below with the test that proves it. A feat
 | Trainer edits a workout template, an exercise and a food; undo ("Geri Al") restores old values; a failed undo reports an error; search survives a client with no branch; an edit made offline waits in the queue and is saved on reconnect | `trainer-edits.spec.js` | passing (desktop + phone) |
 | Trainer controls without visible text (add button, search box, filter menus) have screen-reader names | `crawl.spec.js` | passing (desktop + phone) |
 | Every trainer view and form: controls at least 44 px and named (no placeholder-only fields), including the rows added by the + buttons | `crawl.spec.js`, `ui-rows.spec.js` | passing (desktop + phone) |
+| Phone: swipe right opens / left closes the menu (not from the screen edge, not inside forms), search bar scrolls with the page, client header buttons keep their text inside | `mobile-nav.spec.js` | passing (phone) |
 | Client downloads their own data ("Verilerimi Dışa Aktar"): only their own rows | `trainer-edits.spec.js` | passing (desktop + phone) |
 
 Still not covered (UI/UX): focus order with a keyboard only, screen-reader reading order, dark/light system theme, real-device touch feel (owner checklist).

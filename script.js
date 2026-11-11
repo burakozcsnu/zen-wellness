@@ -6,7 +6,7 @@
 
  document.addEventListener('DOMContentLoaded', () => {
     // --- CACHE BUSTER ---
-    const APP_VERSION = '1.3.120';
+    const APP_VERSION = '1.3.121';
     const vTag = document.getElementById('version-tag');
     if (vTag) vTag.innerText = `v${APP_VERSION} - Realtime Sync`;
     let activeLoginRole = 'admin';
@@ -1414,6 +1414,38 @@
         overlay.classList.toggle('active', shouldOpen);
         if (toggle) toggle.setAttribute('aria-expanded', String(shouldOpen));
     };
+
+    // Phone menu: swipe right opens it, swipe left closes it. Ignored over inputs, open forms and sideways-scrolling
+    // areas (like the profile tabs), and from the very left edge, where iPhone Safari uses the swipe for "back".
+    (() => {
+        let start = null;
+        const blocked = el => {
+            for (let node = el; node && node !== document.body; node = node.parentElement) {
+                if (/^(INPUT|SELECT|TEXTAREA)$/.test(node.tagName)) return true;
+                if (node.scrollWidth > node.clientWidth + 1 && /(auto|scroll)/.test(getComputedStyle(node).overflowX)) return true;
+            }
+            return false;
+        };
+        document.addEventListener('touchstart', event => {
+            const touch = event.touches[0];
+            start = event.touches.length === 1 && !blocked(event.target) ? { x: touch.clientX, y: touch.clientY, time: Date.now() } : null;
+        }, { passive: true });
+        document.addEventListener('touchend', event => {
+            if (!start) return;
+            const touch = event.changedTouches[0];
+            const from = start;
+            start = null;
+            const dx = touch.clientX - from.x;
+            const dy = touch.clientY - from.y;
+            if (Date.now() - from.time > 700 || Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
+            const toggle = document.querySelector('.mobile-logo');
+            if (!toggle || toggle.offsetParent === null) return; // no drawer on desktop or in the client portal
+            if ([...document.querySelectorAll('.modal')].some(modal => modal.style.display === 'block')) return;
+            const isOpen = document.querySelector('.sidebar')?.classList.contains('mobile-open');
+            if (dx > 0 && !isOpen && from.x > 24) window.toggleMobileMenu(true);
+            if (dx < 0 && isOpen) window.toggleMobileMenu(false);
+        }, { passive: true });
+    })();
 
     window.goBack = () => {
         if (state.navHistory.length > 1) {

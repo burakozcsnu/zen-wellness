@@ -2207,3 +2207,18 @@ body .btn-filter-toggle { background: var(--surface-raised, #1b1b1b); color: var
 .modal-content h2 { margin-bottom: 1rem; padding-right: 3rem; }
 .member-portal-header .btn-logout { white-space: nowrap; padding: 0 0.85rem; }
 .modal button { min-width: 44px; min-height: 44px; } /* rows added by the + buttons use small inline sizes */
+
+/* Mobile fixes (v1.3.121): the search bar scrolls away instead of pinning under the logo bar and hiding headings;
+   the client header buttons never shrink below their text. */
+@media (max-width: 768px) {
+    .global-search-bar { position: static; }
+}
+.member-portal-header button { flex: none; white-space: nowrap; }
+.member-portal-header .btn-logout { min-height: 44px; font-size: 0.95rem; }
+@media (max-width: 600px) {
+    .member-portal-header { flex-wrap: wrap; row-gap: 0.6rem; }
+    .member-portal-brand { flex: 1 1 auto; min-width: 0; }
+    .member-portal-header .auth-secondary { flex: 1 1 100%; }
+}
+.btn-edit:not(:empty)::before, .btn-view:not(:empty)::before { margin-right: 0.4em; }
+.member-card .card-actions { margin-top: 0.9rem; }
