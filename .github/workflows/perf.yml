@@ -14,6 +14,11 @@ jobs:
   perf:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # One job at a time on the shared zen-test database: two runs (push + pull request, or the weekly perf run)
+    # rebuilding the same database at once made each other fail with "policy already exists".
+    concurrency:
+      group: zen-test-database
+      cancel-in-progress: false
     env:
       ZEN_TESTDB_SUPABASE_URL: ${{ secrets.ZEN_TESTDB_SUPABASE_URL }}
       ZEN_TESTDB_PUBLISHABLE_KEY: ${{ secrets.ZEN_TESTDB_PUBLISHABLE_KEY }}

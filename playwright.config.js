@@ -14,6 +14,9 @@ module.exports = defineConfig({
   webServer: { command: 'npx serve . -l 3111', url: 'http://localhost:3111', reuseExistingServer: !process.env.CI },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'], channel } },
-    { name: 'phone', use: { ...devices['iPhone 13'], defaultBrowserType: 'chromium', channel } }
+    { name: 'phone', use: { ...devices['iPhone 13'], defaultBrowserType: 'chromium', channel } },
+    // Safari's own engine (WebKit) on an iPhone-sized screen. Chromium cannot show Safari-only layout problems
+    // (for example the notch height), so the layout specs also run here. Only these specs: the rest are not layout checks.
+    { name: 'phone-safari', testMatch: /(mobile-nav|ui-rows|crawl)\.spec\.js/, use: { ...devices['iPhone 13'] } }
   ]
 });

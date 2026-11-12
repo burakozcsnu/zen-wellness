@@ -1153,7 +1153,8 @@ body.member-portal-active > .app-wrapper {
         z-index: 30;
         align-items: center;
         gap: 0.55rem;
-        min-height: 58px;
+        /* the notch height is part of the box: without it the content area collapses and the logo spills over the search bar */
+        min-height: calc(58px + env(safe-area-inset-top));
         padding: calc(0.55rem + env(safe-area-inset-top)) 0.75rem 0.4rem;
         background: rgba(13, 17, 23, 0.96);
         border-bottom: 1px solid var(--border-soft);

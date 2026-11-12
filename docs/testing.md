@@ -15,6 +15,10 @@ Tests never touch production. They use a separate Supabase project called `zen-t
 | 5 | Click-through wizard (every nav item and tab, both roles, phone + desktop) | `tests/e2e/crawl.spec.js` | `npm run test:e2e` | yes |
 | 6 | Performance (query speed on big data, load ramp to 100 users, browser speed, memory) | `tests/perf/` | `npm run test:perf:seed` once, then `npm run test:perf` | yes |
 
+**Browsers:** every end-to-end spec runs in Chromium on a desktop and on an iPhone-sized screen (`desktop`, `phone`). The layout specs (`crawl`, `mobile-nav`, `ui-rows`) also run in WebKit, Safari's own engine (`phone-safari`), because Chromium cannot show Safari-only layout problems such as the notch. Locally: `npx playwright install chromium webkit`.
+
+**Shared test database:** CI jobs that rebuild or use `zen-test` (e2e and the weekly perf run) share one queue (`concurrency: zen-test-database`), so two runs never rebuild it at the same time. A run waits for the one in front of it; if three queue up, the middle one is cancelled (re-run it).
+
 Layer 6 also runs weekly and on demand through `.github/workflows/perf.yml` (not on every PR: it is heavy). Baseline numbers and open findings are in `docs/perf-baseline.md`.
 
 **Known gaps** are tests marked `todo`: they run and report, but do not fail the build, because the fix needs an owner decision (see `docs/perf-baseline.md`). A known gap is never deleted; when it is fixed the test must be changed to a normal test. There are none open at the moment.
@@ -61,6 +65,7 @@ Every feature gets a row in the table below with the test that proves it. A feat
 | Trainer controls without visible text (add button, search box, filter menus) have screen-reader names | `crawl.spec.js` | passing (desktop + phone) |
 | Every trainer view and form: controls at least 44 px and named (no placeholder-only fields), including the rows added by the + buttons | `crawl.spec.js`, `ui-rows.spec.js` | passing (desktop + phone) |
 | Phone: swipe right opens / left closes the menu (not from the screen edge, not inside forms), search bar scrolls with the page, client header buttons keep their text inside | `mobile-nav.spec.js` | passing (phone) |
+| Phone header with a notch (0, 47 and 59 px, as on an iPhone home-screen app): logo inside its bar, search bar never covers it | `mobile-nav.spec.js` | passing (phone). also runs in WebKit (`phone-safari`); the test simulates the notch by rewriting the CSS function that reads it |
 | Client downloads their own data ("Verilerimi Dışa Aktar"): only their own rows | `trainer-edits.spec.js` | passing (desktop + phone) |
 
 Still not covered (UI/UX): focus order with a keyboard only, screen-reader reading order, dark/light system theme, real-device touch feel (owner checklist).

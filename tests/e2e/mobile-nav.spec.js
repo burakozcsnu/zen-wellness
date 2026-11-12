@@ -3,15 +3,24 @@
 const { test, expect, login } = require('./fixtures');
 const { env } = require('../helpers/api');
 
-test.beforeEach(({}, info) => test.skip(info.project.name !== 'phone', 'phone layout only'));
+test.beforeEach(({}, info) => test.skip(!info.project.name.startsWith('phone'), 'phone layout only'));
 
 // A finger moving from `from` to `to`, sent as real touch events to whatever is under the finger.
 const swipe = (page, from, to) => page.evaluate(([a, b]) => {
   const el = document.elementFromPoint(a[0], a[1]);
   const send = (type, point) => {
-    const touch = new Touch({ identifier: 1, target: el, clientX: point[0], clientY: point[1] });
+    const touch = { identifier: 1, target: el, clientX: point[0], clientY: point[1] };
     const live = type === 'touchend' ? [] : [touch];
-    el.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: live, targetTouches: live, changedTouches: [touch] }));
+    let event;
+    try { // Chromium builds real touch events; Safari has no Touch constructor, so it gets a plain event carrying the same fields
+      const real = new Touch(touch);
+      const realLive = type === 'touchend' ? [] : [real];
+      event = new TouchEvent(type, { bubbles: true, cancelable: true, touches: realLive, targetTouches: realLive, changedTouches: [real] });
+    } catch {
+      event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, { touches: { value: live }, targetTouches: { value: live }, changedTouches: { value: [touch] } });
+    }
+    el.dispatchEvent(event);
   };
   send('touchstart', a);
   send('touchmove', [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
@@ -48,8 +57,8 @@ test.describe('trainer menu', () => {
 
   test('the search bar scrolls away with the page instead of pinning over headings', async ({ page }) => {
     await expect(page.locator('.global-search-bar')).toHaveCSS('position', 'static');
-    await page.mouse.move(200, 500);
-    await page.mouse.wheel(0, 700);
+    // Scroll until the page has really moved (it may still be loading and too short at first). Mobile Safari has no mouse wheel.
+    await expect.poll(() => page.evaluate(() => { const content = document.querySelector('.content'); content.scrollTop = 700; return content.scrollTop; }), { timeout: 15000 }).toBeGreaterThan(80);
     const bar = await page.locator('.global-search-bar').boundingBox();
     const brand = await page.locator('.mobile-brand').boundingBox();
     expect(bar.y + bar.height).toBeLessThanOrEqual(brand.y + brand.height + 1); // scrolled up under the logo bar, not pinned below it
@@ -70,3 +79,29 @@ test('client header: every button keeps its text inside its box and on screen', 
     expect(b.height).toBeGreaterThanOrEqual(44);
   }
 });
+
+// The phone header must hold the logo whatever the notch/status-bar height is (iPhone home-screen app: about 47-59 px).
+// Chromium reports a notch of 0, so the notch is simulated by rewriting the CSS function that reads it.
+for (const notch of [0, 47, 59]) {
+  test(`trainer header: logo bar contains the logo and the search bar does not cover it (notch ${notch}px)`, async ({ page }) => {
+    await page.route('**/style.css*', async route => {
+      const response = await route.fetch();
+      await route.fulfill({ response, body: (await response.text()).replace(/env\(safe-area-inset-top\)/g, `${notch}px`) });
+    });
+    await login(page, 'admin', env.adminEmail, env.adminPassword);
+    await expect(page.locator('#app-wrapper')).toBeVisible({ timeout: 20000 });
+    await page.waitForTimeout(1200);
+    const box = selector => page.locator(selector).boundingBox();
+    const brand = await box('.mobile-brand');
+    const logo = await box('.mobile-logo');
+    const wordmark = await box('.mobile-wordmark');
+    const bar = await box('.global-search-bar');
+    expect(brand.y + brand.height, 'logo bar ends above the search bar').toBeLessThanOrEqual(bar.y + 1);
+    expect(logo.y + logo.height, 'logo stays inside the logo bar').toBeLessThanOrEqual(brand.y + brand.height + 8);
+    expect(wordmark.y + wordmark.height, 'wordmark is not under the search bar').toBeLessThanOrEqual(bar.y);
+    expect(logo.y, 'logo is not above the screen').toBeGreaterThanOrEqual(0);
+    // Nothing but the logo bar's own content may be drawn over it: the first thing under its centre is the logo bar itself.
+    const topmost = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('.mobile-brand') !== null, [wordmark.x + 4, wordmark.y + wordmark.height / 2]);
+    expect(topmost).toBe(true);
+  });
+}

@@ -35,6 +35,11 @@ jobs:
   e2e:
     needs: unit
     runs-on: ubuntu-latest
+    # One job at a time on the shared zen-test database: two runs (push + pull request, or the weekly perf run)
+    # rebuilding the same database at once made each other fail with "policy already exists".
+    concurrency:
+      group: zen-test-database
+      cancel-in-progress: false
     # Fork PRs get no secrets; the job then skips instead of failing.
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     env:
@@ -64,7 +69,7 @@ jobs:
         run: npm run test:seed
       - name: Integration tests (permissions matrix, migrations)
         run: npm run test:integration
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium webkit
       - name: End-to-end tests
         run: npm run test:e2e
       - uses: actions/upload-artifact@v4
