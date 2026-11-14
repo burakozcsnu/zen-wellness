@@ -13,6 +13,12 @@ test.describe('client portal actions', () => {
   test.beforeAll(async () => {
     admin = await signIn(env.adminEmail, env.adminPassword);
     [{ id: memberId }] = await rest(admin, 'GET', `uyeler?select=id&email=eq.${encodeURIComponent(env.clientEmail)}`);
+    // The trainer form saves one entry per set (weight and reps as text, decimal comma allowed).
+    const [shaped] = await rest(admin, 'POST', 'antrenmanlar', {
+      id: Date.now() + 2, member_id: memberId, tarih: today(), sablon: 'E2E Set Shape',
+      setler: JSON.stringify([{ ad: 'E2E Bench', set_no: 1, weight: '60', reps: '8', sure: '', rest_seconds: 90 }])
+    });
+    created.push(['antrenmanlar', shaped.id]);
     // A workout dated today with two exercises, and a session on today's weekday: the trainer's side of the story.
     const [workout] = await rest(admin, 'POST', 'antrenmanlar', {
       id: Date.now(), member_id: memberId, tarih: today(), sablon: 'E2E Antrenman',
@@ -53,6 +59,13 @@ test.describe('client portal actions', () => {
     completions = await rest(admin, 'GET', `workout_completions?select=completed&member_id=eq.${memberId}&workout_id=eq.${workoutId}&exercise_index=eq.0`);
     expect(completions).toEqual([{ completed: false }]);
     expect(problems.filter(p => !p.includes('Failed to load resource'))).toEqual([]);
+  });
+
+  test('a workout saved by the trainer form shows its weight and reps', async ({ page }) => {
+    await login(page, 'user', env.clientEmail, env.clientPassword);
+    await expect(page.getByText('Hoş geldiniz')).toBeVisible({ timeout: 20000 });
+    await page.locator('[data-portal-tab="workouts"]').click();
+    await expect(page.locator('.member-exercise-item', { hasText: 'E2E Bench' })).toContainText('60 kg × 8');
   });
 
   test('confirming and declining a session is saved for that day', async ({ page }) => {

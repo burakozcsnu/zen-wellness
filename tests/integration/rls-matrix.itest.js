@@ -22,6 +22,11 @@ const SPEC = {
   health_metrics:          { client: 'read' },
   workout_completions:     { client: 'full' },
   schedule_attendance:     { client: 'full' },
+  workout_sessions:        { client: 'full' },
+  workout_session_steps:   { client: 'full' },
+  push_subscriptions:      { client: 'full' },
+  push_reminder_deliveries: { client: 'read' },
+  schedule_notifications:  { client: 'read' },
   programlar:              { client: 'none', noMember: true },
   master_egzersizler:      { client: 'none', noMember: true },
   master_besinler:         { client: 'none', noMember: true },
@@ -44,14 +49,28 @@ const ROW = {
   device_connections: m => ({ id: uid(), member_id: m, platform: 'ios', device_identifier: `itest-${uid()}` }),
   health_metrics: m => ({ id: uid(), member_id: m, source: 'healthkit', metric_type: 'steps', value: 1, unit: 'count', recorded_at: new Date().toISOString() }),
   workout_completions: m => ({ id: uid(), member_id: m, workout_id: 1, exercise_index: slot++, completion_date: '2026-01-01', completed: true }),
-  schedule_attendance: m => ({ id: uid(), member_id: m, schedule_id: 1, occurrence_date: `2026-01-${String(1 + (slot++ % 28)).padStart(2, '0')}`, status: 'attending' })
+  schedule_attendance: m => ({ id: uid(), member_id: m, schedule_id: 1, occurrence_date: `2026-01-${String(1 + (slot++ % 28)).padStart(2, '0')}`, status: 'attending' }),
+  workout_sessions: m => ({ id: uid(), member_id: m, source: 'manual', activity_type: 'itest', started_at: new Date().toISOString() }),
+  workout_session_steps: () => ({ id: uid(), exercise_name: 'itest', step_index: slot++ }),
+  push_subscriptions: m => ({ id: uid(), member_id: m, endpoint: `https://itest.invalid/${uid()}`, p256dh: 'itest', auth: 'itest' }),
+  push_reminder_deliveries: () => ({ id: uid(), occurrence_key: `itest-${uid()}`, reminder_type: 'day-before' }),
+  schedule_notifications: m => ({ id: uid(), member_id: m, action: 'created', message: 'itest' })
 };
 // Tables whose rows need a parent row (foreign key) that belongs to the same client.
-const PARENT = { workout_completions: ['antrenmanlar', 'workout_id'], schedule_attendance: ['weekly_program_schedule', 'schedule_id'] };
+// Each entry is a list of [parent table, foreign key column].
+const PARENT = {
+  workout_completions: [['antrenmanlar', 'workout_id']], schedule_attendance: [['weekly_program_schedule', 'schedule_id']],
+  workout_session_steps: [['workout_sessions', 'workout_session_id']],
+  push_reminder_deliveries: [['push_subscriptions', 'subscription_id'], ['weekly_program_schedule', 'schedule_id']]
+};
+// Tables without their own member_id column: ownership is checked through the parent row instead.
+const NO_MEMBER_ID = ['workout_session_steps', 'push_reminder_deliveries'];
 const UPDATE = {
   olcumler: { weight: 71 }, antrenmanlar: { sablon: 'itest2' }, beslenme_planlari: { plan_adi: 'itest2' }, dokumanlar: { adi: 'itest2' },
   weekly_program_schedule: { notes: 'itest2' }, device_connections: { device_name: 'itest2' }, health_metrics: { value: 2 },
-  workout_completions: { completed: false }, schedule_attendance: { status: 'declined' }
+  workout_completions: { completed: false }, schedule_attendance: { status: 'declined' },
+  workout_sessions: { activity_type: 'itest2' }, workout_session_steps: { exercise_name: 'itest2' }, push_subscriptions: { user_agent: 'itest2' },
+  push_reminder_deliveries: { reminder_type: 'hour-before' }, schedule_notifications: { message: 'itest2' }
 };
 
 async function signIn(email, password) {
@@ -129,14 +148,16 @@ describe('RLS permissions matrix (test database)', () => {
 
       let rowA, rowB;
       const parents = {};
-      const build = member => ({ ...ROW[table](member), ...(PARENT[table] ? { [PARENT[table][1]]: parents[member] } : {}) });
+      const build = member => ({ ...ROW[table](member), ...Object.fromEntries((PARENT[table] || []).map(([t, fk]) => [fk, parents[member][t]])) });
       before(async () => {
         for (const member of [memberA, memberB]) {
-          if (!PARENT[table]) continue;
-          const parent = await call(admin, 'POST', PARENT[table][0], { body: ROW[PARENT[table][0]](member) });
-          assert.ok(parent.rows[0], `trainer could not seed parent row for ${table} (HTTP ${parent.status})`);
-          created.push([PARENT[table][0], parent.rows[0].id]);
-          parents[member] = parent.rows[0].id;
+          parents[member] = {};
+          for (const [parentTable] of PARENT[table] || []) {
+            const parent = await call(admin, 'POST', parentTable, { body: ROW[parentTable](member) });
+            assert.ok(parent.rows[0], `trainer could not seed parent row ${parentTable} for ${table} (HTTP ${parent.status})`);
+            created.push([parentTable, parent.rows[0].id]);
+            parents[member][parentTable] = parent.rows[0].id;
+          }
         }
         for (const [member, assign] of [[memberA, r => (rowA = r)], [memberB, r => (rowB = r)]]) {
           const result = await call(admin, 'POST', table, { body: build(member) });
@@ -154,8 +175,9 @@ describe('RLS permissions matrix (test database)', () => {
       it('a client sees only their own rows', async () => {
         // Targeted queries, so the check still works when a client owns thousands of rows (API returns 1,000 max).
         assert.equal((await call(clientA, 'GET', table, { query: `?select=id&id=eq.${rowA.id}` })).rows.length, 1, 'client cannot see their own row');
-        assert.equal((await call(clientA, 'GET', table, { query: `?select=id&member_id=neq.${memberA}&limit=1` })).rows.length, 0, "client can see another client's rows");
-        assert.equal((await call(clientB, 'GET', table, { query: `?select=id&member_id=neq.${memberB}&limit=1` })).rows.length, 0, "client B can see another client's rows");
+        const foreign = (member, row) => NO_MEMBER_ID.includes(table) ? `id=eq.${row.id}` : `member_id=neq.${member}`;
+        assert.equal((await call(clientA, 'GET', table, { query: `?select=id&${foreign(memberA, rowB)}&limit=1` })).rows.length, 0, "client can see another client's rows");
+        assert.equal((await call(clientB, 'GET', table, { query: `?select=id&${foreign(memberB, rowA)}&limit=1` })).rows.length, 0, "client B can see another client's rows");
       });
 
       it("a client cannot change or delete another client's row", async () => {

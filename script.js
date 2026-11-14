@@ -6,9 +6,40 @@
 
  document.addEventListener('DOMContentLoaded', () => {
     // --- CACHE BUSTER ---
-    const APP_VERSION = '1.3.122';
+    const APP_VERSION = '1.3.128';
     const vTag = document.getElementById('version-tag');
-    if (vTag) vTag.innerText = `v${APP_VERSION} - Realtime Sync`;
+    if (vTag) vTag.textContent = `v${APP_VERSION} - Zen Wellness Club`;
+
+    window.showToast = (message, type = 'info') => {
+        let region = document.getElementById('toast-region');
+        if (!region) {
+            region = document.createElement('div');
+            region.id = 'toast-region';
+            region.className = 'toast-region';
+            document.body.appendChild(region);
+        }
+        if ([...region.children].some(toast => toast.textContent === message)) return;
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+        toast.textContent = message;
+        toast.addEventListener('click', () => toast.remove());
+        setTimeout(() => toast.remove(), type === 'error' ? 6000 : 4000);
+        region.appendChild(toast);
+        while (region.children.length > 3) region.firstChild.remove();
+    };
+
+    // Nothing is sent to a server: the error stays in the console and the user sees a short message.
+    const reportUnexpectedError = error => {
+        console.error(error);
+        window.showToast('Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.', 'error');
+    };
+    window.addEventListener('error', event => {
+        if (event.target !== window) return; // failed image/script loads are not code errors
+        if (String(event.message).includes('ResizeObserver loop')) return;
+        reportUnexpectedError(event.error || event.message);
+    });
+    window.addEventListener('unhandledrejection', event => reportUnexpectedError(event.reason));
     let activeLoginRole = 'admin';
     let activeAuthMode = 'login';
     window.showPortalRoles = () => {
@@ -161,18 +192,45 @@
         const errorElement = document.getElementById('auth-error');
         if (errorElement) errorElement.textContent = message;
     };
+    // iPhone Safari has no install prompt: explain Add to Home Screen once, never when already installed or on other devices.
+    function showIosInstallHint() {
+        const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent);
+        if (!isIos || navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches || document.getElementById('ios-hint')) return;
+        try { if (localStorage.getItem('ios_hint_dismissed')) return; } catch { /* storage blocked: show the hint every time */ }
+        const card = document.createElement('div');
+        card.id = 'ios-hint';
+        card.className = 'ios-hint';
+        card.setAttribute('role', 'status');
+        const text = document.createElement('span');
+        text.textContent = 'Uygulamayı ana ekrana ekleyin: Paylaş simgesine, sonra "Ana Ekrana Ekle"ye dokunun.';
+        const ok = document.createElement('button');
+        ok.type = 'button';
+        ok.textContent = 'Tamam';
+        ok.addEventListener('click', () => {
+            try { localStorage.setItem('ios_hint_dismissed', '1'); } catch { /* storage blocked: the card only closes */ }
+            card.remove();
+        });
+        card.append(text, ok);
+        document.body.appendChild(card);
+    }
     const enterAdminPortal = () => {
+        state.navHistory = ['members-view'];
         document.body.classList.add('portal-entered');
         document.getElementById('brand-splash')?.classList.add('is-hidden');
+        showIosInstallHint();
         init();
     };
     let activeMemberPortalMemberId = null;
     let activeMemberPortalTab = 'overview';
+    let portalTabTrail = []; // tabs visited before the current one, for the back button
+    let memberPortalData = null; // last portal data as loaded or cached; unsent changes are laid over it at render time
     const enterMemberPortal = () => {
         document.body.classList.add('member-portal-active');
         document.getElementById('brand-splash')?.classList.add('is-hidden');
         document.getElementById('app-wrapper')?.setAttribute('hidden', '');
         document.getElementById('member-portal')?.removeAttribute('hidden');
+        portalTabTrail = [];
+        showIosInstallHint();
         loadMemberPortal();
     };
     const createScheduleNotification = async ({ memberId, scheduleId = null, action, message }) => {
@@ -188,6 +246,8 @@
         }
     };
     const exitAdminPortal = () => {
+        state.navHistory = ['members-view'];
+        portalTabTrail = [];
         document.body.classList.remove('member-portal-active');
         document.body.classList.remove('portal-entered');
         document.getElementById('brand-splash')?.classList.remove('is-hidden');
@@ -198,6 +258,14 @@
         memberNotificationTimer = null;
         memberNotificationMember = null;
         memberNotificationSchedules = [];
+        memberPortalData = null;
+        releaseMemberSession();
+        // Logged sets are personal data: nothing of the last user stays in memory for the next one.
+        state.workoutSessions = [];
+        state.attendance = [];
+        state.sessionSteps = [];
+        state.activeWorkoutSession = null;
+        savedStepIds.clear();
         window.closeModal('modal-auth');
         setSyncStatus('offline', 'Yönetici girişi bekleniyor');
         if (realtimeChannel) {
@@ -227,26 +295,50 @@
         VAPID_PUBLIC_KEY: 'BJx6pZl_kYFxXZZ28NRlP0XPEjUwwvlCn2tal2DblY_EMxopkxxA1TfL4SYlvIiAuSsB61qkctZ99jtk4L5mQPE'
     };
 
-    const supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
+    // Weak gym signal must end in "queued", not in a frozen button. Uploads (storage) may legitimately take longer.
+    const timedFetch = (input, init = {}) => {
+        const url = typeof input === 'string' ? input : input.url;
+        const own = init.signal || (typeof input === 'object' && input.signal);
+        if (own || url.includes('/storage/v1/') || typeof AbortSignal === 'undefined' || !AbortSignal.timeout) return fetch(input, init);
+        return fetch(input, { ...init, signal: AbortSignal.timeout(15000) });
+    };
+    const supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY, { global: { fetch: timedFetch } });
+    let currentUserId = null; // kept in step with the login so refreshAll can stay synchronous
     const dataService = window.TrainerProDataService.create(supabase);
     // Whole-table (or one member's) read in pages: the API caps one response at 1,000 rows. Same { data, error } shape as supabase.from().select().
     const loadAll = (table, filters) => dataService.fetchAll(table, 1000, filters)
         .then(data => ({ data, error: null })).catch(error => ({ data: null, error }));
+    // Steps of the 30 most recent sessions (they have no member_id). A failed read gives null plus a toast, never a blank screen.
+    const loadSessionSteps = async (sessions) => {
+        const ids = [...sessions].sort((a, b) => new Date(b.started_at) - new Date(a.started_at)).slice(0, 30).map(session => session.id);
+        const result = await loadAll('workout_session_steps', { workout_session_id: ids });
+        if (result.error) {
+            handleError(result.error, 'Session steps load');
+            showToast('Set kayıtları yüklenemedi.', 'error');
+            return null;
+        }
+        return result.data || [];
+    };
     window.addEventListener('trainerpro-sync-queue', event => {
         const pending = event.detail?.pending || 0;
-        if (pending > 0) setSyncStatus('syncing', `${pending} çevrimdışı işlem bekliyor`);
+        if (event.detail?.queued) showToast('Bağlantı yok. Değişiklik cihazda bekliyor; bağlantı gelince gönderilecek.', 'info');
+        if (pending > 0) setSyncStatus('syncing', `${pending} değişiklik gönderilmeyi bekliyor`);
         else if (navigator.onLine) {
             setSyncStatus('online', 'Senkronize edildi');
-            sync().catch(error => handleError(error, 'Queued sync refresh'));
+            // A client must never go through the trainer's loader.
+            (document.body.classList.contains('member-portal-active') ? loadMemberPortal() : sync())
+                .catch(error => handleError(error, 'Queued sync refresh'));
         }
     });
     // An offline change failed for good (kept in localStorage 'trainerpro_sync_failed').
     window.addEventListener('trainerpro-sync-failed', event => {
-        (event.detail?.failed || []).forEach(item => {
-            alert(`Çevrimdışı yapılan bir değişiklik kaydedilemedi (${item.table}: ${item.lastError}). Lütfen bu bilgiyi tekrar girin.`);
-        });
+        if (memberPortalData && document.body.classList.contains('member-portal-active')) showMemberPortal(memberPortalData, currentUserId); // drop the tick of a change that was dropped
+        if (event.detail?.failed?.length) showToast('Bir değişiklik kaydedilemedi. Ayrıntılar için bekleyen değişiklikler listesine bakın.', 'error');
     });
+    window.addEventListener('trainerpro-sync-auth', () => showToast('Oturum süresi doldu. Değişiklikleriniz cihazda bekliyor; lütfen tekrar giriş yapın.', 'error'));
     supabase.auth.onAuthStateChange((event, session) => {
+        currentUserId = session?.user?.id || null;
+        window.setTimeout(renderSyncPending, 0); // login and logout; deferred so the function below is defined
         if (event === 'PASSWORD_RECOVERY') {
             window.setTimeout(async () => {
                 const password = window.prompt('Yeni şifrenizi girin:');
@@ -266,6 +358,8 @@
             return;
         }
         if (event === 'SIGNED_OUT') {
+            // Not a chosen logout (wrong role, expired session): drop the cache but keep the queue, the same person normally logs in again.
+            localStorage.removeItem('trainerpro_cache');
             exitAdminPortal();
             return;
         }
@@ -279,15 +373,40 @@
     });
     window.handleAdminLogout = async () => {
         try {
-            const { error } = await withAuthTimeout(
-                supabase.auth.signOut(),
-                'Çıkış işlemi zaman aşımına uğradı.'
-            );
-            if (error) throw error;
+            const { data: sessionData } = await supabase.auth.getSession();
+            const userId = sessionData?.session?.user?.id || null;
+            const pending = userId ? dataService.getPendingCount(userId) : 0;
+            if (pending > 0 && !confirm(`Gönderilmemiş ${pending} değişiklik var. Çıkış yaparsanız bu değişiklikler silinir. Yine de çıkış yapılsın mı?`)) return;
+            let clearFailed = false;
+            try {
+                dataService.clearLocalData(userId);
+            } catch (clearError) {
+                handleError(clearError, 'Clear local data');
+                clearFailed = true;
+                showToast('Cihazdaki veriler silinemedi. Lütfen tarayıcı verilerini elle temizleyin.', 'error');
+            }
+            let signOutError = null;
+            try {
+                ({ error: signOutError } = await withAuthTimeout(
+                    supabase.auth.signOut(),
+                    'Çıkış işlemi zaman aşımına uğradı.'
+                ));
+            } catch (error) {
+                signOutError = error;
+            }
+            if (signOutError) {
+                handleError(signOutError, 'Admin logout');
+                // The server call failed (no connection), so the session is removed from this device only.
+                localStorage.removeItem(supabase.auth.storageKey);
+                // The reload would wipe the toast, so let it be read first.
+                if (clearFailed) await new Promise(resolve => setTimeout(resolve, 2000));
+                window.location.reload();
+                return;
+            }
             exitAdminPortal();
         } catch (error) {
             handleError(error, 'Admin logout');
-            alert('Çıkış yapılamadı. Lütfen tekrar deneyin.');
+            showToast('Çıkış yapılamadı. Lütfen tekrar deneyin.', 'error');
         }
     };
     window.exportMyData = async () => {
@@ -306,7 +425,8 @@
                 workouts: state.workouts.filter(item => item.member_id === memberId),
                 schedules: state.schedules.filter(item => item.member_id === memberId),
                 healthMetrics: state.healthMetrics.filter(item => item.member_id === memberId),
-                workoutSessions: state.workoutSessions.filter(item => item.member_id === memberId)
+                workoutSessions: state.workoutSessions.filter(item => item.member_id === memberId),
+                sessionSteps: state.sessionSteps.filter(step => state.workoutSessions.some(item => item.id == step.workout_session_id && item.member_id === memberId))
             };
             const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -317,7 +437,7 @@
             URL.revokeObjectURL(url);
         } catch (error) {
             handleError(error, 'Data export');
-            alert('Veriler dışa aktarılamadı. Lütfen tekrar deneyin.');
+            showToast('Veriler dışa aktarılamadı. Lütfen tekrar deneyin.', 'error');
         }
     };
     window.handleAdminLogin = async (event) => {
@@ -383,7 +503,7 @@
 
     let state = {
         members: [], exercises: [], programs: [], measurements: [], workouts: [], documents: [], schedules: [], cloudFiles: [],
-        foods: [], diets: [], healthMetrics: [], workoutSessions: [], deviceConnections: [],
+        foods: [], diets: [], healthMetrics: [], workoutSessions: [], sessionSteps: [], deviceConnections: [], attendance: [],
         activeWorkoutSession: null,
         activeMemberId: null, undoStack: [], navHistory: ['members-view'],
         surveyAnswers: {}, currentStep: 0, measurementRequired: false,
@@ -422,7 +542,7 @@
         localStorage.setItem(key, '1');
         new Notification('Zen Wellness Club seans hatırlatması', {
             body: `${getScheduleDayName(schedule.day_of_week)} ${schedule.start_time.slice(0, 5)} · ${schedule.branch} seansınız ${offsetLabel}.`,
-            icon: 'zen-wellness-logo.png'
+            icon: 'icons/icon-192.png'
         });
     };
 
@@ -566,12 +686,12 @@
     window.sendTestNotification = async () => {
         const registration = await navigator.serviceWorker.getRegistration('./');
         if (!registration) {
-            alert('Push servisi henüz kurulmamış. Önce bildirimleri etkinleştirin.');
+            showToast('Push servisi henüz kurulmamış. Önce bildirimleri etkinleştirin.', 'error');
             return;
         }
         await registration.showNotification('Zen Wellness Club test bildirimi', {
             body: 'iPhone push bildirimi başarıyla çalışıyor.',
-            icon: 'zen-wellness-icon.png',
+            icon: 'icons/icon-192.png',
             tag: 'trainer-pro-test',
             // Without renotify, a repeat test silently replaces the previous notification.
             renotify: true
@@ -592,11 +712,13 @@
             await loadMemberPortal();
         } catch (error) {
             handleError(error, 'Member push unsubscribe');
-            alert(`Bildirimler kapatılamadı: ${trMessage(error)}`);
+            showToast(`Bildirimler kapatılamadı: ${trMessage(error)}`, 'error');
         }
     };
 
-    const renderMemberPortal = ({ member, measurements, workouts, diets, documents, schedules, deliveries, notifications = [], attendance = [], completions = [], pushEnabled }) => {
+    const renderMemberPortal = ({ member, measurements, workouts, diets, documents, schedules, deliveries, notifications = [], attendance = [], completions = [], workoutSessions = [], sessionSteps = [], pushEnabled }) => {
+        state.workoutSessions = workoutSessions; // the export and later screens read these, with unsent changes laid over
+        state.sessionSteps = sessionSteps;
         // Re-renders after a save keep the member on their current tab; a different member starts on overview.
         const isSameMember = activeMemberPortalMemberId === member.id;
         activeMemberPortalMemberId = member.id;
@@ -612,6 +734,10 @@
         const attendanceByKey = new Map(attendance.map(item => [`${item.schedule_id}:${item.occurrence_date}`, item.status]));
         const completionByKey = new Map(completions.map(item => [`${item.workout_id}:${item.exercise_index}:${item.completion_date}`, item.completed]));
         const todayDate = window.TrainerProDataService.localDate();
+        const planSetText = set => {
+            const first = window.TrainerProExerciseDomain.planSets([set])[0];
+            return first ? window.TrainerProExerciseDomain.formatSet(first.targetWeight, first.targetReps, first.targetSeconds) : '';
+        };
         const dailyExercises = sortedWorkouts.flatMap(workout => {
             const sets = window.safeJSONParse(workout.setler, []);
             return sets.map((set, index) => ({ workout, set, index }));
@@ -620,7 +746,7 @@
             const key = `${workout.id}:${index}:${todayDate}`;
             const completed = completionByKey.get(key);
             return `<li class="member-exercise-item">
-                <span><strong>${escapePortalText(set.ad || 'Egzersiz')}</strong><small>${escapePortalText(workout.sablon || 'Antrenman')} · ${escapePortalText(set.set || set.tekrar || '')}</small></span>
+                <span><strong>${escapePortalText(set.ad || 'Egzersiz')}</strong><small>${escapePortalText(workout.sablon || 'Antrenman')} · ${escapePortalText(planSetText(set))}</small></span>
                 <button class="btn-secondary" type="button" onclick="window.toggleWorkoutExercise(${workout.id}, ${index}, ${completed ? 'false' : 'true'})">${completed ? 'Tamamlandı ✓' : 'Tamamla'}</button>
             </li>`;
         }).join('') : '<p class="member-portal-muted">Bugün için egzersiz listesi bulunmuyor.</p>';
@@ -742,6 +868,9 @@
                         <li style="background:rgba(255,255,255,0.02); padding:1rem; border-radius:8px; margin-bottom:0.5rem; border:1px solid rgba(255,255,255,0.05);">
                             <strong>${escapePortalText(workout.sablon || 'Antrenman')}</strong><br>
                             <span class="member-portal-muted">${escapePortalText(workout.tarih)}</span>
+                            ${window.TrainerProExerciseDomain.planSets(workout.setler).length
+                                ? `<br><button class="btn-secondary session-start" type="button" data-session-start="${workout.id}" onclick="window.startMemberSession(${workout.id})">${activeSessionFor(workout.id, workoutSessions) ? 'Devam Et' : 'Antrenmanı Başlat'}</button>`
+                                : '<br><span class="member-portal-muted">Bu antrenmanda egzersiz yok.</span>'}
                         </li>
                     `).join('')}</ul>` : '<p class="member-portal-muted">Henüz antrenman kaydı bulunmuyor.</p>'}
                 </section>
@@ -779,11 +908,49 @@
             </div>`;
         window.selectMemberPortalTab(isSameMember ? activeMemberPortalTab : 'overview');
         startMemberNotifications(member, sortedSchedules, pushEnabled);
+        renderMemberSession(); // an open session screen follows the new data (a queue flush reloads the portal)
+    };
+
+    // Renders the portal with this user's unsent changes laid over the data; the data itself stays as loaded.
+    const showMemberPortal = (data, userId) => {
+        memberPortalData = data;
+        const pending = dataService.getPending(userId);
+        const lay = (rows, table) => window.TrainerProDataService.applyPending(rows, table, pending);
+        renderMemberPortal({
+            ...data,
+            member: lay([data.member], 'uyeler')[0] || data.member,
+            measurements: lay(data.measurements, 'olcumler'),
+            attendance: lay(data.attendance, 'schedule_attendance'),
+            completions: lay(data.completions, 'workout_completions'),
+            workoutSessions: lay(data.workoutSessions || [], 'workout_sessions'),
+            sessionSteps: lay(data.sessionSteps || [], 'workout_session_steps')
+        });
+    };
+    // A queued change shows at once from the data in hand; a sent one reloads from the server.
+    const reloadMemberPortal = (queued) => (queued && memberPortalData
+        ? Promise.resolve(showMemberPortal(memberPortalData, currentUserId))
+        : loadMemberPortal());
+    const memberCacheTime = (lastSync) => new Date(lastSync).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const showCachedMemberPortal = (userId, status) => {
+        let cache = null;
+        try {
+            cache = JSON.parse(localStorage.getItem('trainerpro_cache') || 'null');
+        } catch (e) {
+            console.warn('Yerel depolama okuma hatası:', e);
+        }
+        const usable = cache?.role === 'member' && cache.portal && cache.userId === userId && Date.now() - cache.lastSync < 14 * 864e5;
+        if (!usable) {
+            if (cache?.role === 'member') localStorage.removeItem('trainerpro_cache'); // another user's or 14-day-old health data
+            if (status) status.textContent = 'Bağlantı yok ve bu cihazda kayıtlı veri bulunmuyor.';
+            return;
+        }
+        showMemberPortal(cache.portal, userId);
+        if (status) status.textContent = `Çevrimdışı · Son güncelleme: ${memberCacheTime(cache.lastSync)}`;
     };
 
     window.toggleScheduleAttendance = async (scheduleId, occurrenceDate, status) => {
         if (!activeMemberPortalMemberId) return;
-        const { error } = await dataService.mutate('schedule_attendance', 'upsert', {
+        const { error, queued } = await dataService.mutate('schedule_attendance', 'upsert', {
             id: window.TrainerProDataService.newId(),
             member_id: activeMemberPortalMemberId,
             schedule_id: scheduleId,
@@ -793,15 +960,15 @@
         }, { onConflict: 'member_id,schedule_id,occurrence_date' });
         if (error) {
             handleError(error, 'Schedule attendance');
-            alert(`Katılım durumu kaydedilemedi: ${trMessage(error)}`);
+            showToast(`Katılım durumu kaydedilemedi: ${trMessage(error)}`, 'error');
             return;
         }
-        await loadMemberPortal();
+        await reloadMemberPortal(queued);
     };
 
     window.toggleWorkoutExercise = async (workoutId, exerciseIndex, completed) => {
         if (!activeMemberPortalMemberId) return;
-        const { error } = await dataService.mutate('workout_completions', 'upsert', {
+        const { error, queued } = await dataService.mutate('workout_completions', 'upsert', {
             id: window.TrainerProDataService.newId(),
             member_id: activeMemberPortalMemberId,
             workout_id: workoutId,
@@ -812,13 +979,14 @@
         }, { onConflict: 'member_id,workout_id,exercise_index,completion_date' });
         if (error) {
             handleError(error, 'Workout completion');
-            alert(`Egzersiz durumu kaydedilemedi: ${trMessage(error)}`);
+            showToast(`Egzersiz durumu kaydedilemedi: ${trMessage(error)}`, 'error');
             return;
         }
-        await loadMemberPortal();
+        await reloadMemberPortal(queued);
     };
 
-    window.selectMemberPortalTab = (tab) => {
+    window.selectMemberPortalTab = (tab, fromBack = false) => {
+        if (!fromBack && tab !== activeMemberPortalTab) portalTabTrail.push(activeMemberPortalTab);
         activeMemberPortalTab = tab;
         document.querySelectorAll('[data-portal-section]').forEach(section => {
             section.hidden = section.dataset.portalSection !== tab;
@@ -1079,10 +1247,13 @@
     async function loadMemberPortal() {
         const status = document.getElementById('member-portal-status');
         if (status) status.textContent = 'Veriler yükleniyor...';
+        let userId = null;
         try {
+            // Offline with a known user: skip getSession(), which cannot answer once the token has expired without a connection.
+            if (!navigator.onLine && currentUserId) return showCachedMemberPortal(currentUserId, status);
             const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
             if (sessionError || !sessionData.session) throw new Error('Oturum bulunamadı.');
-            const userId = sessionData.session.user.id;
+            userId = sessionData.session.user.id;
             // Önce sadece member'i çekip ID'sini bulmalıyız
             const memberResult = await supabase.from('uyeler').select('*').eq('auth_user_id', userId).maybeSingle();
             if (memberResult.error) throw memberResult.error;
@@ -1113,6 +1284,7 @@
             state.schedules = schedulesResult.data || [];
             state.healthMetrics = healthMetricsResult.error ? [] : (healthMetricsResult.data || []);
             state.workoutSessions = workoutSessionsResult.error ? [] : (workoutSessionsResult.data || []);
+            state.sessionSteps = (await loadSessionSteps(state.workoutSessions)) || [];
 
             // Measurements'ları render etmeden önce hesaplanmış (sanal) alanlarını (BMR, VO2Max vb.) geri getir (Admin panelindeki sync mantığıyla aynı)
             const mappedMeasurements = (measurementsResult.data || []).map(m => {
@@ -1141,7 +1313,7 @@
                 return m;
             });
 
-            renderMemberPortal({
+            const portal = {
                 member,
                 measurements: mappedMeasurements,
                 workouts: workoutsResult.data || [],
@@ -1152,11 +1324,25 @@
                 notifications: notificationsResult.error ? [] : (notificationsResult.data || []),
                 attendance: attendanceResult.error ? [] : (attendanceResult.data || []),
                 completions: completionsResult.error ? [] : (completionsResult.data || []),
+                workoutSessions: state.workoutSessions,
+                sessionSteps: state.sessionSteps,
                 pushEnabled: (pushResult.data || []).length > 0
-            });
+            };
+            showMemberPortal(portal, userId);
+            // No device copy before the KVKK questionnaire is completed: the cached portal has no questionnaire.
+            if (member.degerlendirme_tamamlandi) {
+                try {
+                    localStorage.setItem('trainerpro_cache', JSON.stringify({ userId, role: 'member', lastSync: Date.now(), portal }));
+                } catch (e) {
+                    console.warn('Yerel depolama hatası (Kota aşımı vb.):', e);
+                }
+            }
             if (!member.degerlendirme_tamamlandi) window.showMemberAssessment(member);
             if (status) status.textContent = 'Salt okunur danışan paneli';
         } catch (error) {
+            if (userId && /Failed to fetch|Load failed|NetworkError|AbortError|TimeoutError|signal timed out|aborted/i.test(error?.message || String(error))) {
+                return showCachedMemberPortal(userId, status);
+            }
             handleError(error, 'Member portal load');
             if (status) status.textContent = `Panel yüklenemedi: ${trMessage(error)}`;
         }
@@ -1181,12 +1367,13 @@
         'beslenme_planlari',
         'device_connections',
         'health_metrics',
-        'workout_sessions'
+        'workout_sessions',
+        'workout_session_steps'
     ];
 
     const MEASUREMENT_FIELDS = [
         { key: 'weight', label: 'Kilo', unit: 'kg', direction: 'down-good' },
-        { key: 'fat', label: 'Yağ Oranı', unit: '%', direction: 'down-good' },
+        { key: 'fat', label: 'Yağ Oranı', unit: '%', direction: 'down-good', better: 'lower' },
         { key: 'neck', label: 'Boyun', unit: 'cm', direction: 'down-good' },
         { key: 'chest', label: 'Göğüs', unit: 'cm', direction: 'up-good' },
         { key: 'waist', label: 'Bel', unit: 'cm', direction: 'down-good' },
@@ -1240,6 +1427,70 @@
     };
     setSyncStatus('offline', 'Yönetici girişi bekleniyor');
 
+    const showOfflineStatus = (lastSync) => {
+        const waiting = dataService.getPendingCount(currentUserId);
+        const base = lastSync
+            ? `Çevrimdışı · Son güncelleme: ${new Date(lastSync).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+            : 'Çevrimdışı · Bu cihazda kayıtlı veri yok';
+        setSyncStatus('offline', waiting ? `${base} · ${waiting} değişiklik gönderilmeyi bekliyor` : base);
+    };
+
+    // --- Waiting / failed changes: button and list ---
+    const SYNC_TABLES = { uyeler: 'Danışan', olcumler: 'Ölçüm', antrenmanlar: 'Antrenman', beslenme_planlari: 'Beslenme planı', weekly_program_schedule: 'Haftalık program', master_egzersizler: 'Egzersiz', master_besinler: 'Besin', programlar: 'Program', workout_completions: 'Egzersiz işareti', schedule_attendance: 'Katılım', push_subscriptions: 'Bildirim aboneliği', schedule_notifications: 'Bildirim', workout_sessions: 'Antrenman oturumu', workout_session_steps: 'Set', dokumanlar: 'Belge' };
+    const SYNC_OPERATIONS = { upsert: 'Kayıt', insert: 'Kayıt', update: 'Güncelleme', delete: 'Silme' };
+    const renderSyncPending = () => {
+        const pending = currentUserId ? dataService.getPending(currentUserId) : [];
+        const failed = currentUserId ? dataService.getFailed(currentUserId) : [];
+        const button = document.getElementById('sync-pending-button');
+        const total = pending.length + failed.length;
+        if (button) {
+            button.hidden = total === 0;
+            button.textContent = String(total);
+            button.setAttribute('aria-label', `Bekleyen değişiklikler (${total})`);
+        }
+        const list = document.getElementById('sync-list');
+        if (!list || document.getElementById('modal-sync').style.display !== 'block') return;
+        const row = (item, failedItem) => {
+            const div = document.createElement('div');
+            div.className = 'sync-row';
+            const text = document.createElement('span');
+            text.className = 'sync-row-text';
+            const time = new Date(item.createdAt).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+            text.textContent = `${SYNC_TABLES[item.table] || item.table} · ${SYNC_OPERATIONS[item.operation] || item.operation} · ${time}`;
+            div.appendChild(text);
+            if (failedItem) {
+                const reason = document.createElement('small');
+                reason.className = 'sync-row-reason';
+                reason.textContent = item.status === 'conflict' ? 'Bu kayıt başka bir cihazda değiştirilmiş.' : trMessage(item.lastError);
+                text.appendChild(reason);
+                for (const [label, action] of [...(item.status === 'conflict' ? [] : [['Tekrar dene', () => dataService.retryFailed(item.queueId)]]), ['Sil', () => { if (window.confirm('Bu değişiklik kalıcı olarak silinsin mi?')) dataService.discardFailed(item.queueId); }]]) {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.textContent = label;
+                    b.addEventListener('click', () => { action(); renderSyncPending(); });
+                    div.appendChild(b);
+                }
+            }
+            return div;
+        };
+        const section = (title, items, failedItems) => {
+            if (!items.length) return;
+            const h = document.createElement('h3');
+            h.textContent = title;
+            list.append(h, ...items.map(item => row(item, failedItems)));
+        };
+        list.replaceChildren();
+        section('Gönderilmeyi bekleyenler', pending, false);
+        section('Kaydedilemeyenler', failed, true);
+        if (!total) {
+            const empty = document.createElement('p');
+            empty.textContent = 'Bekleyen değişiklik yok.';
+            list.appendChild(empty);
+        }
+    };
+    document.getElementById('sync-pending-button')?.addEventListener('click', () => { window.openModal('modal-sync'); renderSyncPending(); });
+    for (const name of ['trainerpro-sync-queue', 'trainerpro-sync-failed']) window.addEventListener(name, renderSyncPending);
+
     // --- CRITICAL DATA SAFETY HELPER ---
     window.safeJSONParse = (data, fallback = null) => {
         if (!data) return fallback;
@@ -1257,15 +1508,49 @@
     window.openModal = (id) => {
         const el = document.getElementById(id);
         if (!el) return;
+        const wasOpen = el.style.display === 'block';
         el.style.display = 'block';
         el.setAttribute('aria-hidden', 'false');
+        el.setAttribute('role', 'dialog');
+        el.setAttribute('aria-modal', 'true');
+        const heading = el.querySelector('h1, h2, h3');
+        if (heading) {
+            if (!heading.id) heading.id = `${id}-heading`;
+            el.setAttribute('aria-labelledby', heading.id);
+        }
+        if (wasOpen) return;
+        el._opener = document.activeElement;
+        const first = modalFocusables(el).find(c => !c.classList.contains('close')) || heading;
+        if (first) { if (first === heading) heading.tabIndex = -1; first.focus(); }
     };
+
+    const modalFocusables = el => [...el.querySelectorAll('button, input, [href], select, textarea, [tabindex]')]
+        .filter(c => !c.disabled && c.tabIndex >= 0 && c.getClientRects().length);
+    const topOpenModal = () => [...document.querySelectorAll('.modal')].reverse().find(m => m.style.display === 'block');
+
+    // Tab wraps inside the top modal, Escape closes it like its close button; close spans act as buttons.
+    document.addEventListener('keydown', event => {
+        const modal = topOpenModal();
+        if (!modal || event.isComposing) return; // IME composition uses Escape/Tab itself
+        const close = event.target.closest?.('.modal .close');
+        if (close && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); close.click(); return; }
+        if (event.key === 'Escape') { event.preventDefault(); window.closeModal(modal.id); return; }
+        if (event.key !== 'Tab') return;
+        const items = modalFocusables(modal);
+        if (!items.length) return;
+        const at = items.indexOf(document.activeElement);
+        const target = event.shiftKey ? (at <= 0 ? items[items.length - 1] : null) : (at === -1 || at === items.length - 1 ? items[0] : null);
+        if (target) { event.preventDefault(); target.focus(); }
+    });
 
     window.closeModal = (id) => {
         const el = document.getElementById(id);
         if (!el) return;
         el.style.display = 'none';
         el.setAttribute('aria-hidden', 'true');
+        const opener = el._opener;
+        el._opener = null;
+        if (opener && document.contains(opener)) opener.focus();
         if (id === 'modal-new-exercise') {
             document.getElementById('edit-ex-id').value = '';
             document.getElementById('new-ex-name').value = '';
@@ -1379,10 +1664,10 @@
 
             // Verileri Supabase'den tekrar çek (senkronize et) ve UI'ı güncelle
             await sync();
-            alert("İşlemler başarıyla geri alındı!");
+            showToast("İşlemler başarıyla geri alındı!", 'info');
         } catch (err) {
             console.error("Geri Alma Hatası (RevertTo):", err);
-            alert("Geri alma işlemi sırasında bir hata oluştu. Bazı değişiklikler geri alınmamış olabilir; lütfen kontrol edip tekrar deneyin.");
+            showToast("Geri alma işlemi sırasında bir hata oluştu. Bazı değişiklikler geri alınmamış olabilir; lütfen kontrol edip tekrar deneyin.", 'error');
         } finally {
             if(fab) fab.classList.remove('is-busy');
         }
@@ -1456,9 +1741,33 @@
         }
     };
 
+    // Back button: one history entry stays armed above the app's first one. A back press lands on the first entry, closes
+    // the top layer and arms the entry again; with no layer left it goes back once more, which leaves the app.
+    // Layers are read from the screen itself, so closing one with its own button leaves nothing stale behind.
+    (() => {
+        const arm = () => history.pushState({ zenBackGuard: true }, '');
+        const closeTopLayer = () => {
+            const modal = [...document.querySelectorAll('.modal')].find(m => m.style.display === 'block' && m.id !== 'modal-auth');
+            if (modal) { window.closeModal(modal.id); return true; }
+            if (sessionEl('member-session') && !sessionEl('member-session').hidden) { window.closeMemberSession(); return true; }
+            if (document.body.classList.contains('member-portal-active')) {
+                if (activeMemberPortalTab === 'overview') return false;
+                window.selectMemberPortalTab(portalTabTrail.pop() || 'overview', true);
+                return true;
+            }
+            if (document.body.classList.contains('portal-entered') && state.navHistory.length > 1) { window.goBack(); return true; }
+            return false;
+        };
+        if (!history.state?.zenBackGuard) arm();
+        window.addEventListener('popstate', () => {
+            if (closeTopLayer()) arm();
+            else history.back();
+        });
+    })();
+
     window.tab = (id) => {
         if (state.measurementRequired && id !== 'measurements') {
-            alert("Bu ay için ölçüm zorunludur! Lütfen önce ölçüm kaydedin.");
+            showToast("Bu ay için ölçüm zorunludur! Lütfen önce ölçüm kaydedin.", 'error');
             return;
         }
         document.querySelectorAll('.tab-content').forEach(c => {
@@ -1584,7 +1893,7 @@
 
         try {
             await navigator.clipboard.writeText(report);
-            alert("Rapor başarıyla panoya kopyalandı! (WhatsApp veya Mail'e yapıştırabilirsiniz)");
+            showToast("Rapor başarıyla panoya kopyalandı! (WhatsApp veya Mail'e yapıştırabilirsiniz)", 'info');
         } catch (err) {
             console.error("Panoya kopyalanamadı:", err);
             prompt("Panoya otomatik kopyalama başarısız oldu. Aşağıdaki metni kopyalayabilirsiniz:", report);
@@ -1612,7 +1921,50 @@
         }
 
         window.updateChart();
+        renderCoachInsights();
     };
+
+    // Trainer-only "Koç özeti" card: adherence, this week's volume per muscle, personal records (logic in exercise-domain.js).
+    const COACH_RECORD_ROWS = 8;
+    const renderCoachInsights = () => {
+        const card = document.getElementById('coach-insights');
+        if (!card || !state.activeMemberId) return;
+        const d = window.TrainerProExerciseDomain;
+        const id = state.activeMemberId;
+        const today = new Date().toLocaleDateString('en-CA');
+        const sessions = state.workoutSessions.filter(s => s.member_id == id);
+        const sets = d.performedSets(state.workouts.filter(w => w.member_id == id), sessions, state.sessionSteps);
+        // Catalog key = trimmed, Turkish-lowercased name, the same key performedSets puts on every set.
+        const muscleMap = new Map(state.exercises.map(ex => [String(ex.ad || '').trim().toLocaleLowerCase('tr'), d.normalize(ex).muscles]));
+        const adh = d.adherence(state.schedules.filter(s => s.member_id == id), (state.attendance || []).filter(a => a.member_id == id), sets, today);
+        const volume = d.weeklyVolume(sets, muscleMap, d.weekStartOf(today));
+        const records = d.personalRecords(sets, today);
+        const showAll = state.coachShowAllFor === id;
+        const maxSets = Math.max(1, ...volume.map(row => row.sets));
+
+        const volumeHtml = volume.length ? volume.map(row => `
+            <div class="coach-row coach-volume-row">
+                <span class="coach-name">${escapeHtml(row.muscle)}</span>
+                <span>${row.sets} set</span><span>${d.formatNumber(row.tonnage)} kg</span>
+                <span class="coach-bar"><span style="width:${Math.round(row.sets / maxSets * 100)}%"></span></span>
+            </div>`).join('') : '<p class="coach-empty">Bu hafta kayıtlı set yok.</p>';
+        const recordHtml = records.length ? records.map((rec, index) => `
+            <div class="coach-row coach-record-row"${!showAll && index >= COACH_RECORD_ROWS ? ' hidden' : ''}>
+                <span class="coach-name">${escapeHtml(rec.name)}${rec.isNew ? ' <span class="coach-badge">Yeni</span>' : ''}</span>
+                <span>${d.formatNumber(rec.bestWeight.value)} kg × ${rec.bestWeight.reps ?? '-'}</span>
+                ${rec.bestE1rm ? `<span class="coach-dim">Tahmini 1TM ${d.formatNumber(rec.bestE1rm.value)} kg</span>` : ''}
+            </div>`).join('') : '<p class="coach-empty">Henüz rekor yok.</p>';
+        const moreHtml = records.length > COACH_RECORD_ROWS && !showAll
+            ? '<button type="button" class="btn-secondary coach-more" onclick="window.showAllCoachRecords()">Tümünü göster</button>' : '';
+
+        card.innerHTML = `
+            <h3>Koç özeti</h3>
+            <h4>Katılım (son 4 hafta)</h4>
+            <p class="coach-adherence">${adh.planned ? `${adh.done}/${adh.planned} antrenman · %${Math.round(adh.ratio * 100)}` : 'Haftalık program yok.'}</p>
+            <h4>Bu haftanın hacmi</h4>${volumeHtml}
+            <h4>Kişisel rekorlar</h4>${recordHtml}${moreHtml}`;
+    };
+    window.showAllCoachRecords = () => { state.coachShowAllFor = state.activeMemberId; renderCoachInsights(); };
 
     window.loadMetricList = () => {
         const cat = document.getElementById('chart-cat').value;
@@ -1692,7 +2044,7 @@
             myW.forEach(w => {
                 const sets = window.safeJSONParse(w.setler, []);
                 const s = sets.find(s => s.ad === metric);
-                if(s) { labels.push(new Date(w.tarih).toLocaleDateString('tr-TR')); data.push(parseFloat(s.weight) || 0); }
+                if(s) { labels.push(new Date(w.tarih).toLocaleDateString('tr-TR')); const weight = parseFloat(s.weight); data.push(Number.isFinite(weight) ? weight : null); }
             });
         }
 
@@ -1707,10 +2059,21 @@
                 ? `${chartLabel} için henüz veri bulunmuyor.`
                 : `${validPoints} kayıt · ${latestDelta === null ? 'İlk kayıt' : `Son değişim: ${formatDelta(latestDelta, chartUnit)}`}`;
         }
-        const pointColors = chartDeltas.map(delta => {
-            if (delta === null || delta === 0) return '#e4ba94';
-            return delta > 0 ? '#35d07f' : '#ff5b67';
-        });
+        // Green means better, red worse; metrics without an unambiguous direction stay neutral.
+        const getPointColor = (delta, better) => {
+            if (!better || delta === null || delta === 0) return '#e4ba94';
+            return (delta < 0) === (better === 'lower') ? '#35d07f' : '#ff5b67';
+        };
+        const better = cat === 'antrenman' ? 'higher' : (cat === 'olcum' || cat === 'testler') ? measurementField?.better : null;
+        // Workout points are compared with the last real value; a set without weight is skipped.
+        let lastWeight = null;
+        const colourDeltas = cat === 'antrenman' ? data.map(value => {
+            if (!Number.isFinite(value)) return null;
+            const delta = lastWeight === null ? null : value - lastWeight;
+            lastWeight = value;
+            return delta;
+        }) : chartDeltas;
+        const pointColors = data.map((_, i) => getPointColor(colourDeltas[i] ?? null, better));
 
         chartObj = new Chart(ctx, {
             type: 'line',
@@ -2240,7 +2603,7 @@
         window.pushToUndoLog('INSERT', 'beslenme_planlari', null, d, `Beslenme Planı: ${d.plan_adi}`);
         await sync();
         window.closeModal('modal-diet');
-        alert("Beslenme planı başarıyla kaydedildi!");
+        showToast("Beslenme planı başarıyla kaydedildi!", 'info');
     };
 
     window.showDietDetail = (id) => {
@@ -2342,13 +2705,26 @@
         }
     };
 
+    const PENDING_STATE_KEYS = {
+        uyeler: 'members', programlar: 'programs', olcumler: 'measurements', antrenmanlar: 'workouts', dokumanlar: 'documents',
+        weekly_program_schedule: 'schedules', master_egzersizler: 'exercises', master_besinler: 'foods', beslenme_planlari: 'diets',
+        health_metrics: 'healthMetrics', workout_sessions: 'workoutSessions', workout_session_steps: 'sessionSteps', device_connections: 'deviceConnections'
+    };
+
     function refreshAll() {
         try {
+            const pending = currentUserId ? dataService.getPending(currentUserId) : [];
+            if (pending.length) {
+                Object.entries(PENDING_STATE_KEYS).forEach(([table, key]) => {
+                    state[key] = window.TrainerProDataService.applyPending(state[key], table, pending);
+                });
+            }
             renderMembers();
             if (state.activeMemberId) renderProfileHeader(state.activeMemberId);
             renderWeeklySchedule();
             renderAssessmentAdmin();
             renderWorkoutHistory();
+            renderMemberSessions();
             renderMeasurementHistory();
             if(typeof renderCardioHistory === 'function') renderCardioHistory();
             renderDocuments();
@@ -2665,12 +3041,12 @@
         const id = document.getElementById('schedule-id').value;
         const memberId = document.getElementById('schedule-member').value;
         if (!memberId) {
-            alert('Lütfen programa atanacak üyeyi seçin.');
+            showToast('Lütfen programa atanacak üyeyi seçin.', 'error');
             return;
         }
         const assignedMember = state.members.find(member => String(member.id) === String(memberId));
         if (!assignedMember?.trainer_id) {
-            alert('Bu üyeye önce yönetici panelindeki üye kartından bir eğitmen atayın.');
+            showToast('Bu üyeye önce yönetici panelindeki üye kartından bir eğitmen atayın.', 'error');
             return;
         }
         const rows = [...document.querySelectorAll('[data-schedule-row]')].map(row => ({
@@ -2682,23 +3058,23 @@
             trainer_id: assignedMember.trainer_id
         }));
         if (!rows.length || rows.some(row => !isValidScheduleTime(row.start_time) || !isValidScheduleTime(row.end_time))) {
-            alert('Lütfen her seans için gün, başlangıç ve bitiş saati seçin.');
+            showToast('Lütfen her seans için gün, başlangıç ve bitiş saati seçin.', 'error');
             return;
         }
         if (rows.some(row => row.end_time <= row.start_time)) {
-            alert('Bitiş saati başlangıç saatinden sonra olmalıdır.');
+            showToast('Bitiş saati başlangıç saatinden sonra olmalıdır.', 'error');
             return;
         }
         const keys = rows.map(row => `${row.day_of_week}-${row.start_time}`);
         if (new Set(keys).size !== keys.length) {
-            alert('Aynı gün ve başlangıç saati yalnızca bir kez eklenebilir.');
+            showToast('Aynı gün ve başlangıç saati yalnızca bir kez eklenebilir.', 'error');
             return;
         }
         const conflict = findScheduleConflict(rows, id);
         if (conflict) {
             const conflictEnd = conflict.end_time?.slice(0, 5) ||
                 `${String(Math.floor(scheduleEndMinutes(conflict) / 60)).padStart(2, '0')}:${String(scheduleEndMinutes(conflict) % 60).padStart(2, '0')}`;
-            alert(`Bu üyenin ${getScheduleDayName(conflict.day_of_week)} günü ${conflict.start_time.slice(0, 5)} - ${conflictEnd} arasında${conflict.branch ? ` ${conflict.branch}` : ''} seansı var. Çakışan seansları düzeltmeden kaydedemezsiniz.`);
+            showToast(`Bu üyenin ${getScheduleDayName(conflict.day_of_week)} günü ${conflict.start_time.slice(0, 5)} - ${conflictEnd} arasında${conflict.branch ? ` ${conflict.branch}` : ''} seansı var. Çakışan seansları düzeltmeden kaydedemezsiniz.`, 'error');
             return;
         }
         const baseData = {
@@ -2714,7 +3090,7 @@
         const { error } = await dataService.mutate('weekly_program_schedule', 'upsert', entries);
         if (error) {
             handleError(error, 'Schedule save');
-            alert(`Çizelge kaydedilemedi: ${trMessage(error)}`);
+            showToast(`Çizelge kaydedilemedi: ${trMessage(error)}`, 'error');
             return;
         }
         await Promise.all(rows.map((row, index) => createScheduleNotification({
@@ -2729,7 +3105,7 @@
             const { error: memberError } = await dataService.mutate('uyeler', 'update', { brans: primaryBranch }, { id: memberId });
             if (memberError) {
                 handleError(memberError, 'Schedule member branch update');
-                alert(`Seans kaydedildi ancak üye branşı güncellenemedi: ${trMessage(memberError)}`);
+                showToast(`Seans kaydedildi ancak üye branşı güncellenemedi: ${trMessage(memberError)}`, 'error');
             }
         }
         await sync();
@@ -2743,7 +3119,7 @@
         const { error } = await dataService.mutate('weekly_program_schedule', 'delete', null, { id });
         if (error) {
             handleError(error, 'Schedule delete');
-            alert(`Seans silinemedi: ${trMessage(error)}`);
+            showToast(`Seans silinemedi: ${trMessage(error)}`, 'error');
             return;
         }
         if (deletedEntry) {
@@ -3054,10 +3430,28 @@
         }).join('');
     }
 
+    function renderMemberSessions() {
+        const card = document.getElementById('member-sessions-card');
+        if (!card) return;
+        const d = window.TrainerProExerciseDomain;
+        const recent = state.workoutSessions.filter(s => s.member_id == state.activeMemberId)
+            .map(s => ({ s, steps: state.sessionSteps.filter(r => String(r.workout_session_id) === String(s.id)) }))
+            .filter(item => item.steps.length)
+            .sort((a, b) => new Date(b.s.started_at) - new Date(a.s.started_at)).slice(0, 5);
+        const items = recent.map(({ s, steps }) => {
+            const workout = state.workouts.find(w => String(w.id) === String(s.metadata && s.metadata.workoutId));
+            const lines = d.groupSteps(steps).map(g => `<div>${escapeHtml(g.exerciseName)}: ${g.sets.map(x => escapeHtml(d.formatSet(x.weight, x.reps, x.durationSeconds))).join(' · ')}</div>`).join('');
+            return `<div class="workout-item"><div class="workout-meta">${new Date(s.started_at).toLocaleString('tr-TR')}${s.status === 'active' ? ' · Devam ediyor' : ''} · ${steps.length} set</div><h3>${escapeHtml((workout && workout.sablon) || 'Antrenman')}</h3>${lines}</div>`;
+        }).join('');
+        card.innerHTML = `<h3>Danışan kayıtları</h3>${items || '<div class="no-results mt-1">Danışan henüz antrenman kaydı girmedi.</div>'}`;
+    }
+
     function renderWorkoutHistory() {
         const container = document.getElementById('workout-history-tree');
         if (!container) return;
         const myW = state.workouts.filter(w => w.member_id == state.activeMemberId).sort((a,b) => new Date(b.tarih) - new Date(a.tarih));
+        const repeatButton = document.getElementById('btn-repeat-workout');
+        if (repeatButton) repeatButton.hidden = myW.length === 0;
         if (myW.length === 0) { container.innerHTML = '<div class="no-results mt-1">Antrenman yok.</div>'; return; }
         container.innerHTML = myW.map(w => `
             <div class="workout-item" onclick="window.showWorkoutDetail(${w.id})" style="cursor:pointer;">
@@ -3133,7 +3527,7 @@
         const { error } = await dataService.mutate('uyeler', 'upsert', m);
         if (error) {
             console.error('[Member save] Supabase error:', error);
-            alert(`Üye kaydedilemedi: ${trMessage(error)}`);
+            showToast(`Üye kaydedilemedi: ${trMessage(error)}`, 'error');
             return;
         }
         window.pushToUndoLog(existingId ? 'UPDATE' : 'INSERT', 'uyeler', oldData, m, `Üye: ${m.ad_soyad}`);
@@ -3202,7 +3596,7 @@
         const { error } = await dataService.mutate('master_egzersizler', 'upsert', newData);
         if (error) {
             console.error('[Exercise save] Supabase error:', error);
-            alert(`Egzersiz kaydedilemedi: ${trMessage(error)}`);
+            showToast(`Egzersiz kaydedilemedi: ${trMessage(error)}`, 'error');
             return;
         }
         const oldData = existingId ? state.exercises.find(ex => ex.id == existingId) : null;
@@ -3230,7 +3624,7 @@
                 }
             }
         } else {
-            alert("Önceki bir ölçüm bulunamadı.");
+            showToast("Önceki bir ölçüm bulunamadı.", 'info');
         }
     };
 
@@ -3275,7 +3669,14 @@
         window.openModal('modal-cardio');
     };
 
-    window.saveCardioTest = async (e) => {
+    // Disables the form's submit button while saving, so a second tap on a slow connection cannot save twice.
+    const whileSaving = async (e, task) => {
+        const button = e.target.querySelector('button[type="submit"]');
+        if (button) button.disabled = true;
+        try { await task(); } finally { if (button) button.disabled = false; }
+    };
+
+    window.saveCardioTest = (e) => whileSaving(e, async () => {
         e.preventDefault();
         const existingId = document.getElementById('c-id').value;
         const id = existingId || window.TrainerProDataService.newId();
@@ -3306,8 +3707,8 @@
         await sync();
         e.target.reset();
         window.closeModal('modal-cardio');
-        alert("Test kaydedildi!");
-    };
+        if (!measurementResult.queued) showToast("Test kaydedildi!", 'info');
+    });
 
     window.openMeasurementModal = () => {
         document.getElementById('m-id').value = '';
@@ -3457,7 +3858,7 @@ window.editMeasurement = (id) => {
         window.openModal('modal-measurement');
     };
 
-    window.saveMeasurement = async (e) => {
+    window.saveMeasurement = (e) => whileSaving(e, async () => {
         e.preventDefault();
         const existingId = document.getElementById('m-id').value;
         const id = existingId || window.TrainerProDataService.newId();
@@ -3501,8 +3902,8 @@ window.editMeasurement = (id) => {
         await sync();
         e.target.reset();
         window.closeModal('modal-measurement');
-        alert("Ölçüm kaydedildi!");
-    };
+        if (!measurementResult.queued) showToast("Ölçüm kaydedildi!", 'info');
+    });
 
     window.openWorkoutModal = () => {
         document.getElementById('w-name').value = '';
@@ -3518,6 +3919,36 @@ window.editMeasurement = (id) => {
 
         window.openModal('modal-workout');
     };
+    // Opens the workout form filled from the client's latest workout, dated today. Nothing is saved until the trainer submits.
+    window.repeatLastWorkout = () => {
+        const last = window.TrainerProExerciseDomain.lastWorkout(state.workouts.filter(w => w.member_id == state.activeMemberId));
+        if (!last) return;
+        window.openWorkoutModal();
+        const parsed = window.safeJSONParse(last.setler, []);
+        const sets = Array.isArray(parsed) ? parsed : [];
+        const num = window.TrainerProExerciseDomain.parseNumber;
+        document.getElementById('w-name').value = last.sablon || '';
+        document.getElementById('w-rpe').value = last.rpe ?? '';
+        document.getElementById('w-tempo').value = last.tempo || '';
+        document.getElementById('w-rest').value = last.rest_seconds ?? '';
+        let wrapper = null, current = null;
+        sets.forEach(set => {
+            if (!wrapper || set.ad !== current) {
+                current = set.ad;
+                window.addSetRowToWorkout();
+                wrapper = [...document.querySelectorAll('.set-row-wrapper')].pop();
+                wrapper.querySelector('.sets-container').innerHTML = '';
+                const select = wrapper.querySelector('.s-name');
+                // An exercise deleted from the catalog still has to round-trip.
+                if (set.ad && ![...select.options].some(o => o.value === set.ad)) select.add(new Option(set.ad, set.ad));
+                select.value = set.ad || '';
+            }
+            // Number inputs blank a decimal comma ("110,5"), so stored text is parsed first; legacy rows hold `set` sets of `tekrar`.
+            const values = { weight: num(set.weight) ?? '', reps: num(set.reps ?? set.tekrar) ?? '', sure: num(set.sure) ?? '', tip: set.tip };
+            const count = set.reps === undefined && num(set.set) > 0 ? num(set.set) : 1;
+            for (let i = 0; i < count; i++) window.addSingleSet(wrapper.querySelector('.sets-container'), values);
+        });
+    };
     window.addSingleSet = (container, vals = {}) => {
         const setDiv = document.createElement('div');
         setDiv.className = 'single-set-row';
@@ -3530,11 +3961,11 @@ window.editMeasurement = (id) => {
             <div class="grid" style="grid-template-columns: 2fr 2fr 1.5fr 2fr 1.5fr; gap:0.5rem; align-items:end;">
                 <div class="form-group" style="margin:0;">
                     <label style="display:block; margin-bottom:0.1rem; color:var(--text-dim); font-size:0.7rem;">Ağırlık (kg)</label>
-                    <input type="number" step="0.5" class="s-weight" aria-label="Ağırlık (kg)" required style="width:100%; text-align:center; padding:0.4rem; border-radius:4px;" value="${vals.weight || ''}">
+                    <input type="number" step="0.5" class="s-weight" aria-label="Ağırlık (kg)" required style="width:100%; text-align:center; padding:0.4rem; border-radius:4px;" value="${vals.weight ?? ''}">
                 </div>
                 <div class="form-group" style="margin:0;">
                     <label style="display:block; margin-bottom:0.1rem; color:var(--text-dim); font-size:0.7rem;">Tekrar</label>
-                    <input type="number" class="s-reps" aria-label="Tekrar" required style="width:100%; text-align:center; padding:0.4rem; border-radius:4px;" value="${vals.reps || ''}">
+                    <input type="number" class="s-reps" aria-label="Tekrar" required style="width:100%; text-align:center; padding:0.4rem; border-radius:4px;" value="${vals.reps ?? ''}">
                 </div>
                 <div class="form-group" style="margin:0;">
                     <label style="display:block; margin-bottom:0.1rem; color:var(--text-dim); font-size:0.7rem;">Süre(sn)</label>
@@ -3623,7 +4054,7 @@ window.editMeasurement = (id) => {
         window.addSingleSet(wrapper.querySelector('.sets-container'));
     };
 
-    window.saveWorkout = async (e) => {
+    window.saveWorkout = (e) => whileSaving(e, async () => {
         e.preventDefault();
         const setler = [];
 
@@ -3664,19 +4095,27 @@ window.editMeasurement = (id) => {
         window.pushToUndoLog('INSERT', 'antrenmanlar', null, w, `Antrenman Kaydedildi: ${w.sablon}`);
         await sync();
         window.closeModal('modal-workout');
-        alert("Antrenman kaydedildi!");
-    };
+        if (!workoutResult.queued) showToast("Antrenman kaydedildi!", 'info');
+    });
 
-    window.startWorkoutSession = async (activityType = 'traditional_strength') => {
-        if (!state.activeMemberId) throw new Error('Aktif üye seçilmedi.');
+    // A trainer logs for the client whose profile is open; a client logs for their own row.
+    const sessionMemberId = () => document.body.classList.contains('member-portal-active') ? activeMemberPortalMemberId : state.activeMemberId;
+    const savedStepIds = new Map(); // "sessionId:stepIndex" -> row id, so an edit keeps the row's id
+
+    window.startWorkoutSession = async (workoutId, activityType = 'traditional_strength') => {
+        const memberId = sessionMemberId();
+        if (!memberId) {
+            showToast('Danışan bulunamadı.', 'error');
+            throw new Error('Danışan bulunamadı.');
+        }
         const session = {
             id: window.TrainerProDataService.newId(),
-            member_id: state.activeMemberId,
+            member_id: memberId,
             source: 'trainer_pro',
             activity_type: activityType,
             status: 'active',
             started_at: new Date().toISOString(),
-            metadata: { appVersion: APP_VERSION }
+            metadata: { appVersion: APP_VERSION, workoutId }
         };
         const result = await dataService.mutate('workout_sessions', 'upsert', session);
         if (result.error) throw result.error;
@@ -3684,12 +4123,12 @@ window.editMeasurement = (id) => {
         return session;
     };
 
-    window.finishWorkoutSession = async (summary = {}) => {
+    window.finishWorkoutSession = async (summary = {}, status = 'completed') => {
         const session = state.activeWorkoutSession;
         if (!session) throw new Error('Aktif antrenman oturumu bulunamadı.');
         const completed = {
             ...session,
-            status: 'completed',
+            status,
             ended_at: new Date().toISOString(),
             active_energy_kcal: summary.activeEnergyKcal ?? null,
             average_heart_rate: summary.averageHeartRate ?? null,
@@ -3705,8 +4144,10 @@ window.editMeasurement = (id) => {
     window.saveWorkoutSessionStep = async (step) => {
         const session = state.activeWorkoutSession;
         if (!session) throw new Error('Aktif antrenman oturumu bulunamadı.');
+        const key = `${session.id}:${step.stepIndex}`;
+        const known = state.sessionSteps.find(row => row.workout_session_id == session.id && row.step_index === step.stepIndex);
         const payload = {
-            id: step.id || window.TrainerProDataService.newId(),
+            id: savedStepIds.get(key) || known?.id || step.id || window.TrainerProDataService.newId(),
             workout_session_id: session.id,
             exercise_name: step.exerciseName,
             step_index: step.stepIndex,
@@ -3723,8 +4164,315 @@ window.editMeasurement = (id) => {
         const result = await dataService.mutate('workout_session_steps', 'upsert', payload, {
             onConflict: 'workout_session_id,step_index'
         });
-        if (result.error) throw result.error;
-        return payload;
+        if (!result.error) savedStepIds.set(key, payload.id);
+        return result;
+    };
+
+    // --- Client workout session screen: log sets, rest countdown ---
+    const SESSION_ACTIVE_MS = 12 * 36e5; // an unfinished session older than this is not offered for "Devam Et"
+    const SESSION_STEP = { w: 2.5, r: 1, s: 5 };
+    const sessionUi = { workoutId: null, rest: 60, draft: {}, editing: new Set(), endsAt: 0, phase: 'idle', timer: null, hideTimer: null, wakeLock: null, audio: null, beep: null, starting: false };
+    const sessionEl = id => document.getElementById(id);
+    const sessionDomain = () => window.TrainerProExerciseDomain;
+
+    const activeSessionFor = (workoutId, sessions) => (sessions || [])
+        .filter(item => item.status === 'active' && String(item.metadata?.workoutId) === String(workoutId) && Date.now() - new Date(item.started_at) < SESSION_ACTIVE_MS)
+        .sort((a, b) => new Date(b.started_at) - new Date(a.started_at))[0];
+
+    // A write that was sent (not queued) is not in the portal data yet; a queued one is laid over by the pending overlay.
+    const patchPortalRows = (key, row) => {
+        if (memberPortalData) memberPortalData[key] = [...(memberPortalData[key] || []).filter(item => item.id !== row.id), row];
+    };
+
+    // Alerts at rest end: each one only where the browser has it.
+    const unlockSessionAudio = () => {
+        try {
+            if (navigator.audioSession) navigator.audioSession.type = 'playback';
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return;
+            sessionUi.audio = sessionUi.audio || new Ctx();
+            sessionUi.audio.resume?.();
+        } catch (error) {
+            console.warn('Ses başlatılamadı:', error);
+        }
+    };
+    const cancelSessionBeep = () => {
+        try { sessionUi.beep?.stop(); } catch (error) { console.warn('Ses durdurulamadı:', error); }
+        sessionUi.beep = null;
+    };
+    const scheduleSessionBeep = seconds => {
+        cancelSessionBeep();
+        const ctx = sessionUi.audio;
+        if (!ctx || seconds <= 0) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        gain.gain.value = 0.2;
+        osc.frequency.value = 880;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        const at = ctx.currentTime + seconds; // the audio clock keeps time while the page timers are throttled
+        osc.start(at);
+        osc.stop(at + 0.3);
+        sessionUi.beep = osc;
+    };
+    const sessionHaptic = () => sessionEl('member-session-haptic')?.click(); // iOS 17.4+ ticks when a switch toggles
+
+    const requestSessionWakeLock = async () => {
+        if (!navigator.wakeLock || sessionUi.wakeLock || !sessionUi.workoutId) return;
+        try {
+            sessionUi.wakeLock = await navigator.wakeLock.request('screen');
+            sessionUi.wakeLock.addEventListener('release', () => { sessionUi.wakeLock = null; });
+        } catch (error) {
+            // Refused (low battery, hidden tab): the screen may sleep, nothing else breaks.
+        }
+    };
+
+    const hideSessionRest = () => {
+        window.clearInterval(sessionUi.timer);
+        window.clearTimeout(sessionUi.hideTimer);
+        sessionUi.timer = sessionUi.hideTimer = null;
+        sessionUi.phase = 'idle';
+        cancelSessionBeep();
+        const bar = sessionEl('member-session-rest-bar');
+        if (bar) bar.hidden = true;
+    };
+    const tickSessionRest = () => {
+        if (sessionUi.phase !== 'counting') return;
+        const left = sessionDomain().restRemaining(sessionUi.endsAt, Date.now());
+        if (left > 0) {
+            sessionEl('member-session-rest-text').textContent = `Dinlenme: ${sessionDomain().formatClock(left)}`;
+            return;
+        }
+        window.clearInterval(sessionUi.timer);
+        sessionUi.timer = null;
+        sessionUi.phase = 'done';
+        sessionEl('member-session-rest-text').textContent = 'Dinlenme bitti';
+        sessionEl('member-session-rest-live').textContent = 'Dinlenme bitti';
+        navigator.vibrate?.([200, 100, 200]);
+        sessionHaptic();
+        sessionUi.hideTimer = window.setTimeout(hideSessionRest, 5000);
+    };
+    const startSessionRest = seconds => {
+        hideSessionRest();
+        sessionUi.endsAt = Date.now() + seconds * 1000; // an end time, so the clock is right after the screen slept
+        sessionUi.phase = 'counting';
+        sessionEl('member-session-rest-live').textContent = '';
+        sessionEl('member-session-rest-bar').hidden = false;
+        scheduleSessionBeep(seconds);
+        sessionUi.timer = window.setInterval(tickSessionRest, 1000);
+        tickSessionRest();
+    };
+    window.extendSessionRest = () => {
+        if (sessionUi.phase !== 'counting') return startSessionRest(15);
+        sessionUi.endsAt += 15000;
+        scheduleSessionBeep(sessionDomain().restRemaining(sessionUi.endsAt, Date.now()));
+        tickSessionRest();
+    };
+    window.skipSessionRest = hideSessionRest;
+    window.adjustSessionRest = delta => {
+        sessionUi.rest = Math.max(0, sessionUi.rest + delta);
+        sessionEl('member-session-rest-label').textContent = sessionUi.rest > 0 ? `Dinlenme süresi: ${sessionUi.rest} sn` : 'Dinlenme süresi: Kapalı';
+    };
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && sessionUi.workoutId) {
+            requestSessionWakeLock(); // the lock is dropped whenever the page is hidden
+            tickSessionRest();
+        }
+    });
+
+    const sessionPlan = () => {
+        const workout = (memberPortalData?.workouts || []).find(item => String(item.id) === String(sessionUi.workoutId));
+        return { workout, sets: workout ? sessionDomain().planSets(workout.setler) : [] };
+    };
+    const isTimedSet = set => set.targetSeconds !== null && set.targetReps === null;
+
+    const sessionFieldMarkup = (stepIndex, key, label, mode, down, up, value) => `
+        <div class="session-field">
+            <label for="sess-${key}-${stepIndex}">${label}</label>
+            <div class="session-stepper">
+                <button type="button" class="btn-secondary" aria-label="${down}" onclick="window.stepSessionField(${stepIndex}, '${key}', -1)">−</button>
+                <input id="sess-${key}-${stepIndex}" type="text" inputmode="${mode}" autocomplete="off" value="${escapeHtml(value)}" oninput="window.setSessionField(${stepIndex}, '${key}', this.value)">
+                <button type="button" class="btn-secondary" aria-label="${up}" onclick="window.stepSessionField(${stepIndex}, '${key}', 1)">+</button>
+            </div>
+        </div>`;
+
+    const sessionRowMarkup = (set, step, last) => {
+        const d = sessionDomain();
+        const i = set.stepIndex;
+        const target = d.formatSet(set.targetWeight, set.targetReps, set.targetSeconds);
+        const lastText = last ? d.formatSet(last.weight, last.reps, last.durationSeconds) : '';
+        const head = `<div class="session-set-head"><strong>Set ${set.setNo}</strong>${target ? `<span>Hedef: ${target}</span>` : ''}${lastText ? `<span>Geçen sefer: ${lastText}</span>` : ''}</div>`;
+        if (step && !sessionUi.editing.has(i)) {
+            return `<li class="session-set is-done" data-step="${i}">${head}<div class="session-set-done"><span>✓ ${d.formatSet(step.weight, step.reps, step.duration_seconds)}</span><button type="button" class="btn-secondary session-edit" onclick="window.editSessionSet(${i})">Düzelt</button></div></li>`;
+        }
+        const num = value => (value === null || value === undefined ? '' : d.formatNumber(value));
+        const source = step
+            ? { w: step.weight, r: step.reps, s: step.duration_seconds }
+            : last ? { w: last.weight, r: last.reps, s: last.durationSeconds } : { w: set.targetWeight, r: set.targetReps, s: set.targetSeconds };
+        sessionUi.draft[i] = sessionUi.draft[i] || { w: num(source.w), r: num(source.r), s: num(source.s) };
+        const draft = sessionUi.draft[i];
+        const second = isTimedSet(set)
+            ? sessionFieldMarkup(i, 's', 'Süre (sn)', 'numeric', 'Süreyi azalt', 'Süreyi artır', draft.s)
+            : sessionFieldMarkup(i, 'r', 'Tekrar', 'numeric', 'Tekrarı azalt', 'Tekrarı artır', draft.r);
+        return `<li class="session-set" data-step="${i}">${head}<div class="session-fields">${sessionFieldMarkup(i, 'w', 'Ağırlık (kg)', 'decimal', 'Ağırlığı azalt', 'Ağırlığı artır', draft.w)}${second}</div><div class="session-set-actions"><button type="button" class="btn-primary session-save" onclick="window.saveSessionSet(${i})">Tamam</button></div></li>`;
+    };
+
+    const renderMemberSession = () => {
+        const screen = sessionEl('member-session');
+        if (!screen || screen.hidden || !sessionUi.workoutId) return;
+        const { workout, sets } = sessionPlan();
+        if (!workout) return releaseMemberSession();
+        const session = state.activeWorkoutSession;
+        const steps = new Map(state.sessionSteps.filter(row => String(row.workout_session_id) === String(session.id)).map(row => [row.step_index, row]));
+        const groups = new Map();
+        sets.forEach(set => {
+            const key = set.exerciseName.toLocaleLowerCase('tr');
+            if (!groups.has(key)) groups.set(key, { name: set.exerciseName, sets: [] });
+            groups.get(key).sets.push(set);
+        });
+        sessionEl('member-session-title').textContent = workout.sablon || 'Antrenman';
+        window.adjustSessionRest(0);
+        const list = sessionEl('member-session-list');
+        const top = list.scrollTop;
+        list.innerHTML = [...groups.values()].map(group => `
+            <section class="session-exercise"><h3>${escapePortalText(group.name || 'Egzersiz')}</h3><ul class="session-sets">${group.sets.map(set =>
+                sessionRowMarkup(set, steps.get(set.stepIndex), sessionDomain().lastNumbers(state.workoutSessions, state.sessionSteps, set.exerciseName, set.setNo, session.id))).join('')}</ul></section>`).join('')
+            + '<button type="button" class="btn-primary session-finish" onclick="window.finishMemberSession()">Antrenmanı Bitir</button>';
+        list.scrollTop = top;
+    };
+
+    window.startMemberSession = async (workoutId) => {
+        if (sessionUi.starting) return;
+        const workout = (memberPortalData?.workouts || []).find(item => String(item.id) === String(workoutId));
+        const sets = workout ? sessionDomain().planSets(workout.setler) : [];
+        if (!sets.length) return;
+        sessionUi.starting = true;
+        try {
+            const existing = activeSessionFor(workoutId, state.workoutSessions);
+            if (existing) state.activeWorkoutSession = existing;
+            else patchPortalRows('workoutSessions', await window.startWorkoutSession(workoutId));
+        } catch (error) {
+            handleError(error, 'Start session');
+            showToast(trMessage(error), 'error');
+            return;
+        } finally {
+            sessionUi.starting = false;
+        }
+        Object.assign(sessionUi, { workoutId, draft: {}, editing: new Set(), rest: sets[0].restSeconds > 0 ? sets[0].restSeconds : 60 });
+        sessionEl('member-session').hidden = false;
+        renderMemberSession();
+        sessionEl('member-session-title').focus();
+        requestSessionWakeLock();
+    };
+
+    // Stops timers, audio and the wake lock and hides the screen (close, finish, logout).
+    const releaseMemberSession = () => {
+        hideSessionRest();
+        if (sessionUi.audio) sessionUi.audio.close().catch(error => console.warn('Ses kapatılamadı:', error));
+        sessionUi.audio = null;
+        if (sessionUi.wakeLock) sessionUi.wakeLock.release().catch(error => console.warn('Ekran kilidi bırakılamadı:', error));
+        sessionUi.wakeLock = null;
+        sessionUi.workoutId = null;
+        const screen = sessionEl('member-session');
+        if (screen) screen.hidden = true;
+    };
+    window.closeMemberSession = () => {
+        const workoutId = sessionUi.workoutId;
+        releaseMemberSession();
+        document.querySelector(`[data-session-start="${workoutId}"]`)?.focus();
+    };
+
+    // While the screen is open, Tab wraps inside it (the page behind is not reachable) and Escape closes it.
+    document.addEventListener('keydown', event => {
+        const screen = sessionEl('member-session');
+        // defaultPrevented: the modal handler already used this key (e.g. Escape closed a modal over the screen).
+        if (!screen || screen.hidden || topOpenModal() || event.defaultPrevented) return;
+        if (event.key === 'Escape') { event.preventDefault(); window.closeMemberSession(); return; }
+        if (event.key !== 'Tab') return;
+        const items = [...screen.querySelectorAll('button, input, [href], select, textarea')]
+            .filter(el => !el.disabled && el.tabIndex >= 0 && el.getClientRects().length);
+        if (!items.length) return;
+        const at = items.indexOf(document.activeElement);
+        const target = event.shiftKey ? (at <= 0 ? items[items.length - 1] : null) : (at === -1 || at === items.length - 1 ? items[0] : null);
+        if (target) { event.preventDefault(); target.focus(); }
+    });
+
+    window.setSessionField = (stepIndex, key, value) => {
+        if (sessionUi.draft[stepIndex]) sessionUi.draft[stepIndex][key] = value;
+    };
+    window.stepSessionField = (stepIndex, key, direction) => {
+        const input = sessionEl(`sess-${key}-${stepIndex}`);
+        const next = Math.max(0, (sessionDomain().parseNumber(input.value) || 0) + direction * SESSION_STEP[key]);
+        input.value = sessionDomain().formatNumber(next);
+        window.setSessionField(stepIndex, key, input.value);
+    };
+    window.editSessionSet = (stepIndex) => {
+        sessionUi.editing.add(stepIndex);
+        delete sessionUi.draft[stepIndex];
+        renderMemberSession();
+        sessionEl(`sess-w-${stepIndex}`)?.focus();
+    };
+
+    window.saveSessionSet = async (stepIndex) => {
+        unlockSessionAudio(); // must happen inside the tap: browsers only start audio after a user gesture
+        sessionHaptic();
+        const d = sessionDomain();
+        const set = sessionPlan().sets.find(item => item.stepIndex === stepIndex);
+        const session = state.activeWorkoutSession;
+        if (!set || !session) return;
+        const timed = isTimedSet(set);
+        const read = key => sessionEl(`sess-${key}-${stepIndex}`);
+        const weightText = read('w').value.trim();
+        const weight = weightText === '' ? null : d.parseNumber(weightText);
+        const second = d.parseNumber(read(timed ? 's' : 'r').value);
+        const secondMax = timed ? 3600 : 999;
+        const bad = (weightText !== '' && (weight === null || weight > 999)) ? 'w'
+            : (second === null || !Number.isInteger(second) || second < 1 || second > secondMax) ? (timed ? 's' : 'r') : null;
+        if (bad) {
+            showToast('Geçerli bir sayı girin.', 'error');
+            read(bad).focus();
+            return;
+        }
+        const wasEdit = sessionUi.editing.has(stepIndex);
+        const restSeconds = sessionUi.rest;
+        const result = await window.saveWorkoutSessionStep({
+            exerciseName: set.exerciseName, stepIndex, sets: 1, weight,
+            reps: timed ? null : second, durationSeconds: timed ? second : null, restSeconds, completed: true
+        });
+        if (result.error) {
+            handleError(result.error, 'Save session set');
+            showToast(trMessage(result.error), 'error');
+            return;
+        }
+        if (!result.queued) {
+            patchPortalRows('sessionSteps', {
+                id: savedStepIds.get(`${session.id}:${stepIndex}`), workout_session_id: session.id, exercise_name: set.exerciseName,
+                step_index: stepIndex, sets: 1, reps: timed ? null : second, weight, duration_seconds: timed ? second : null,
+                tempo: null, rest_seconds: restSeconds, rpe: null, completed: true, completed_at: new Date().toISOString()
+            });
+        }
+        sessionUi.editing.delete(stepIndex);
+        delete sessionUi.draft[stepIndex];
+        showMemberPortal(memberPortalData, currentUserId); // from current data plus the pending overlay: no network round trip
+        document.querySelector(`#member-session [data-step="${stepIndex}"] .session-edit`)?.focus();
+        if (!wasEdit && sessionUi.rest > 0) startSessionRest(sessionUi.rest);
+    };
+
+    window.finishMemberSession = async () => {
+        const session = state.activeWorkoutSession;
+        if (!session) return;
+        const logged = state.sessionSteps.some(row => String(row.workout_session_id) === String(session.id) && row.completed);
+        try {
+            patchPortalRows('workoutSessions', await window.finishWorkoutSession({}, logged ? 'completed' : 'cancelled'));
+        } catch (error) {
+            handleError(error, 'Finish session');
+            showToast(trMessage(error), 'error');
+            return;
+        }
+        releaseMemberSession();
+        showToast(logged ? 'Antrenman kaydedildi.' : 'Kayıt yapılmadı.', logged ? 'success' : 'info');
+        window.selectMemberPortalTab('workouts');
+        showMemberPortal(memberPortalData, currentUserId); // the button reads "Antrenmanı Başlat" again
     };
 
     window.addExerciseRowToTemplate = (name = '') => {
@@ -3762,7 +4510,7 @@ window.editMeasurement = (id) => {
 
         await sync();
         window.closeModal('modal-program');
-        alert("Şablon kaydedildi!");
+        showToast("Şablon kaydedildi!", 'info');
     };
 
     window.showProgramDetail = (id) => {
@@ -3786,7 +4534,7 @@ window.editMeasurement = (id) => {
         if (!p) return;
         window.closeModal('modal-detail');
         if (!state.activeMemberId) {
-            alert("Lütfen önce bir üye seçin.");
+            showToast("Lütfen önce bir üye seçin.", 'error');
             window.nav('members-view');
             return;
         }
@@ -4056,7 +4804,7 @@ window.editMeasurement = (id) => {
         if (answer === null) return;
         const normalize = value => String(value || '').trim().toLocaleLowerCase('tr-TR');
         if (normalize(answer) !== normalize(member.ad_soyad)) {
-            alert('İsim eşleşmedi, silme iptal edildi.');
+            showToast('İsim eşleşmedi, silme iptal edildi.', 'error');
             return;
         }
         // Files first: once the profile is gone, nothing in the app leads to them anymore.
@@ -4071,7 +4819,7 @@ window.editMeasurement = (id) => {
             }
         } catch (e) {
             handleError(e, 'DeleteMember files');
-            alert(`Danışanın belgeleri buluttan silinemedi: ${trMessage(e)}. Danışan silinmedi, lütfen tekrar deneyin.`);
+            showToast(`Danışanın belgeleri buluttan silinemedi: ${trMessage(e)}. Danışan silinmedi, lütfen tekrar deneyin.`, 'error');
             return;
         }
         try {
@@ -4080,7 +4828,7 @@ window.editMeasurement = (id) => {
             if (!data?.length) throw new Error('kayıt bulunamadı veya yetki yok');
         } catch (e) {
             handleError(e, 'DeleteMember');
-            alert(`Danışan silinemedi: ${trMessage(e)}`);
+            showToast(`Danışan silinemedi: ${trMessage(e)}`, 'error');
             return;
         }
         try { await sync(); } catch (e) { handleError(e, 'DeleteMember sync'); }
@@ -4107,7 +4855,7 @@ window.editMeasurement = (id) => {
             await window.scanStorageForDocs();
         } catch (e) {
             handleError(e, 'DeleteCloudDoc');
-            alert(`Döküman silinemedi: ${trMessage(e)}`);
+            showToast(`Döküman silinemedi: ${trMessage(e)}`, 'error');
         }
     };
 
@@ -4117,14 +4865,14 @@ window.editMeasurement = (id) => {
             const encodedPath = path.split('/').map(seg => encodeURIComponent(seg)).join('/');
             const { data, error } = await supabase.storage.from('dokumanlar').createSignedUrl(encodedPath, 60);
             if (data?.signedUrl) win.location.href = data.signedUrl;
-            else { if(win) win.close(); alert("Hata: Dosya bulunamadı"); }
+            else { if(win) win.close(); showToast("Hata: Dosya bulunamadı", 'error'); }
         } catch (e) { if(win) win.close(); }
     };
 
     window.uploadDocument = async (e) => {
         e.preventDefault();
         if (!navigator.onLine) {
-            alert('Belge yüklemek için internet bağlantısı gereklidir. Diğer değişiklikler çevrimdışı kuyruğa alınabilir.');
+            showToast('Belge yüklemek için internet bağlantısı gereklidir. Diğer değişiklikler çevrimdışı kuyruğa alınabilir.', 'error');
             return;
         }
         const file = document.getElementById('doc-file').files[0];
@@ -4141,9 +4889,9 @@ window.editMeasurement = (id) => {
             if (dbError) throw dbError;
             window.pushToUndoLog('INSERT', 'dokumanlar', null, data[0], `Döküman Yüklendi: ${name}`);
             await sync();
-            alert("Döküman yüklendi!");
+            showToast("Döküman yüklendi!", 'info');
             e.target.reset();
-        } catch (err) { alert("Hata: " + trMessage(err)); }
+        } catch (err) { showToast("Hata: " + trMessage(err), 'error'); }
     };
 
     window.deleteDocument = async (id, path) => {
@@ -4157,7 +4905,7 @@ window.editMeasurement = (id) => {
             if (!data?.length) throw new Error('kayıt bulunamadı veya yetki yok');
         } catch (e) {
             handleError(e, 'DeleteDoc');
-            alert(`Döküman silinemedi: ${trMessage(e)}`);
+            showToast(`Döküman silinemedi: ${trMessage(e)}`, 'error');
             return;
         }
         if (oldData) window.pushToUndoLog('DELETE', 'dokumanlar', oldData, null, `Döküman Silindi: ${oldData.adi}`);
@@ -4166,7 +4914,7 @@ window.editMeasurement = (id) => {
             if (error) throw error;
         } catch (e) {
             handleError(e, 'DeleteDocFile');
-            alert(`Döküman kaydı silindi ancak dosya buluttan silinemedi: ${trMessage(e)}. Bulut listesinden tekrar silmeyi deneyin.`);
+            showToast(`Döküman kaydı silindi ancak dosya buluttan silinemedi: ${trMessage(e)}. Bulut listesinden tekrar silmeyi deneyin.`, 'error');
         }
         try { await sync(); } catch (e) { handleError(e, 'DeleteDoc sync'); }
     };
@@ -4217,7 +4965,7 @@ window.editMeasurement = (id) => {
 
         if (needsMeasurement) {
             state.measurementRequired = true;
-            alert("Bu ay için ölçümünüz eksik! Lütfen devam etmeden önce güncel ölçümlerinizi girin.");
+            showToast("Bu ay için ölçümünüz eksik! Lütfen devam etmeden önce güncel ölçümlerinizi girin.", 'error');
             window.nav('profile-view'); window.tab('measurements');
         } else {
             state.measurementRequired = false;
@@ -4309,32 +5057,48 @@ window.editMeasurement = (id) => {
     // --- OFFLINE & LOCAL STORAGE CACHING ---
     function saveToLocal() {
         try {
+            // Keep history only of members who still exist: a deleted client's data must not stay on the device (KVKK).
+            const memberIds = new Set(state.members.map(member => String(member.id)));
+            const ofMembers = rows => rows.filter(row => memberIds.has(String(row.member_id)));
+            const keptSessions = ofMembers(state.workoutSessions);
+            const keptSessionIds = new Set(keptSessions.map(session => String(session.id)));
             const stateToSave = {
                 members: state.members,
                 programs: state.programs,
-                measurements: state.measurements,
-                workouts: state.workouts,
-                documents: state.documents,
+                measurements: ofMembers(state.measurements),
+                workouts: ofMembers(state.workouts),
+                documents: ofMembers(state.documents),
                 schedules: state.schedules,
                 exercises: state.exercises,
                 foods: state.foods,
-                diets: state.diets,
-                healthMetrics: state.healthMetrics,
-                workoutSessions: state.workoutSessions,
+                diets: ofMembers(state.diets),
+                healthMetrics: ofMembers(state.healthMetrics),
+                workoutSessions: keptSessions,
+                sessionSteps: state.sessionSteps.filter(step => keptSessionIds.has(String(step.workout_session_id))),
+                attendance: ofMembers(state.attendance),
                 deviceConnections: state.deviceConnections,
+                userId: currentUserId,
                 lastSync: new Date().getTime()
             };
+            if (!currentUserId) return;
+            // shortcut: localStorage holds about 5 MB; move the cache to IndexedDB if a trainer's data outgrows it.
             localStorage.setItem('trainerpro_cache', JSON.stringify(stateToSave));
         } catch (e) {
             console.warn("Yerel depolama hatası (Kota aşımı vb.):", e);
         }
     }
 
+    // Returns the cache time (ms) or false. A member-shaped or other user's cache is simply not ours.
     function loadFromLocal() {
         try {
             const cached = localStorage.getItem('trainerpro_cache');
             if (cached) {
                 const data = JSON.parse(cached);
+                // Health data must not stay on a device forever: other user's, owner-less or 14-day-old caches are removed.
+                if (!currentUserId || data.userId !== currentUserId || data.role === 'member' || !(Date.now() - data.lastSync < 14 * 864e5)) {
+                    localStorage.removeItem('trainerpro_cache');
+                    return false;
+                }
                 state.members = data.members || [];
                 state.programs = data.programs || [];
                 state.measurements = data.measurements || [];
@@ -4346,8 +5110,10 @@ window.editMeasurement = (id) => {
                 state.diets = data.diets || [];
                 state.healthMetrics = data.healthMetrics || [];
                 state.workoutSessions = data.workoutSessions || [];
+                state.sessionSteps = data.sessionSteps || [];
+                state.attendance = data.attendance || [];
                 state.deviceConnections = data.deviceConnections || [];
-                return true;
+                return data.lastSync;
             }
         } catch (e) {
             console.warn("Yerel depolama okuma hatası:", e);
@@ -4359,7 +5125,7 @@ window.editMeasurement = (id) => {
     // History tables (measurements, workouts, diets, documents, health data, sessions) are loaded for ONE client when their
     // profile is opened, not for everyone at login: login time no longer grows with the amount of history.
     const MEMBER_HISTORY = [['olcumler', 'measurements'], ['antrenmanlar', 'workouts'], ['beslenme_planlari', 'diets'],
-        ['dokumanlar', 'documents'], ['health_metrics', 'healthMetrics'], ['workout_sessions', 'workoutSessions']];
+        ['dokumanlar', 'documents'], ['health_metrics', 'healthMetrics'], ['workout_sessions', 'workoutSessions'], ['schedule_attendance', 'attendance']];
 
     // Adds the derived test values (age, resting HR, VO2 max, BMR...) that are not stored in the database.
     const enrichMeasurements = (rows, members) => rows.map(m => {
@@ -4399,6 +5165,13 @@ window.editMeasurement = (id) => {
                 state.measuredMemberIds[rows.length ? 'add' : 'delete'](memberId);
             }
         });
+        const sessions = state.workoutSessions.filter(item => item.member_id == memberId);
+        const steps = await loadSessionSteps(sessions);
+        if (steps) {
+            const sessionIds = new Set(sessions.map(item => String(item.id)));
+            state.sessionSteps = state.sessionSteps.filter(step => !sessionIds.has(String(step.workout_session_id))).concat(steps);
+        }
+        saveToLocal();
         return true;
     }
 
@@ -4418,20 +5191,24 @@ window.editMeasurement = (id) => {
     }
 
     async function sync() {
+        const syncOffline = () => {
+            const lastSync = loadFromLocal();
+            refreshAll(); // also lays unsent changes over whatever the cache gave
+            showOfflineStatus(lastSync);
+            return false;
+        };
+        // Offline with a known user: skip getSession(), which cannot answer once the token has expired without a connection.
+        if (!navigator.onLine && currentUserId) return syncOffline();
         const { data: sessionData } = await withAuthTimeout(
             supabase.auth.getSession(),
             'Oturum kontrolü zaman aşımına uğradı.'
         );
+        currentUserId = sessionData.session?.user?.id || null;
         if (!sessionData.session) {
             setSyncStatus('offline', 'Yönetici girişi bekleniyor');
             return false;
         }
-        if (!navigator.onLine) {
-            const hasLocal = loadFromLocal();
-            if(hasLocal) refreshAll();
-            setSyncStatus('offline', 'Çevrimdışı (Son Önbellek Kullanılıyor)');
-            return false;
-        }
+        if (!navigator.onLine) return syncOffline();
 
         // Önce hızlıca ekranı doldur (Optimistic UI)
         loadFromLocal();
@@ -4464,6 +5241,7 @@ window.editMeasurement = (id) => {
             // An open profile keeps showing fresh history after every sync (edits, live updates).
             if (state.activeMemberId) await loadMemberData(state.activeMemberId);
 
+            saveToLocal(); // before the overlay, so the cache holds what the server said
             refreshAll();
             loadMeasuredMembers();
             setSyncStatus('online', 'Senkronize edildi');
@@ -4530,6 +5308,54 @@ window.editMeasurement = (id) => {
     window.sync = sync;
 
     let initialized = false;
+    // The worker keeps the app openable without signal (and receives pushes); no worker support is not an error.
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js', { scope: './' }).then(watchForNewVersion).catch(error => handleError(error, 'Service worker'));
+    }
+
+    // A new worker waits until the user taps Yenile, so old and new files are never mixed. A first install has no controller and never prompts.
+    function watchForNewVersion(registration) {
+        if (!registration) return; // workers blocked by the browser or the test: nothing to watch
+        const offer = () => {
+            if (!navigator.serviceWorker.controller || !registration.waiting || document.getElementById('update-bar')) return;
+            const bar = document.createElement('div');
+            bar.id = 'update-bar';
+            bar.className = 'update-bar';
+            bar.setAttribute('role', 'status');
+            const text = document.createElement('span');
+            text.textContent = 'Yeni sürüm hazır.';
+            const refresh = document.createElement('button');
+            refresh.type = 'button';
+            refresh.id = 'update-refresh';
+            refresh.textContent = 'Yenile';
+            refresh.addEventListener('click', () => {
+                // Another tab already activated the new worker: nothing is waiting, a plain reload loads it.
+                if (!registration.waiting) return window.location.reload();
+                refresh.disabled = true;
+                navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload(), { once: true });
+                registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
+            });
+            const later = document.createElement('button');
+            later.type = 'button';
+            later.id = 'update-later';
+            later.textContent = 'Sonra';
+            later.addEventListener('click', () => bar.remove());
+            bar.append(text, refresh, later);
+            document.body.appendChild(bar);
+        };
+        offer();
+        registration.addEventListener('updatefound', () => {
+            const worker = registration.installing;
+            worker?.addEventListener('statechange', () => { if (worker.state === 'installed') offer(); });
+        });
+        let lastCheck = Date.now();
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState !== 'visible' || Date.now() - lastCheck < 30 * 60 * 1000) return;
+            lastCheck = Date.now();
+            registration.update().catch(error => handleError(error, 'Service worker'));
+        });
+    }
+
     async function init() {
         if (initialized) return;
         initialized = true;
@@ -4542,7 +5368,10 @@ window.editMeasurement = (id) => {
             scheduleRealtimeSync('browser-online');
         });
         window.addEventListener('offline', () => {
-            setSyncStatus('offline', 'Çevrimdışı · Son veriler gösteriliyor');
+            // Read only the cache time: loading the cache here could overwrite fresher in-memory data.
+            let cache = null;
+            try { cache = JSON.parse(localStorage.getItem('trainerpro_cache')); } catch { /* unreadable cache counts as none */ }
+            showOfflineStatus(cache && cache.userId === currentUserId && Date.now() - cache.lastSync < 14 * 864e5 ? cache.lastSync : false);
         });
 
         document.addEventListener('visibilitychange', () => {

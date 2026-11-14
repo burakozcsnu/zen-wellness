@@ -97,19 +97,16 @@ test.describe('trainer edits existing data', () => {
   });
 
   test('undo of a delete puts the row back; a failed undo says so instead of claiming success', async ({ page }) => {
-    const dialogs = [];
     await open(page, 'nutrition');
-    page.removeAllListeners('dialog');
-    page.on('dialog', dialog => { dialogs.push(dialog.message()); dialog.accept(); });
     await foodAction(page, '.btn-delete');
     await expect.poll(async () => (await rest(admin, 'GET', `master_besinler?select=id&id=eq.${ids.food}`)).length, { timeout: 15000 }).toBe(0);
 
     // First undo attempt: the database refuses (simulated). The screen must report a failure.
-    await page.route('**/rest/v1/master_besinler*', route => route.request().method() === 'POST' ? route.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"boom"}' }) : route.continue());
+    await page.route('**/rest/v1/master_besinler*', route => route.request().method() === 'POST' ? route.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"boom"}' }) : route.fallback());
     await clickUndo(page);
     await page.locator('#undo-log-list .card').first().click();
-    await expect.poll(() => dialogs.some(message => message.includes('hata oluştu')), { timeout: 15000 }).toBe(true);
-    expect(dialogs.some(message => message.includes('başarıyla geri alındı'))).toBe(false);
+    await expect(page.locator('#toast-region')).toContainText('hata oluştu', { timeout: 15000 });
+    await expect(page.locator('#toast-region')).not.toContainText('başarıyla geri alındı');
     expect((await rest(admin, 'GET', `master_besinler?select=id&id=eq.${ids.food}`)).length).toBe(0);
 
     // Second attempt, database healthy again: the row is restored.
@@ -142,10 +139,12 @@ test.describe('client data export', () => {
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Verilerimi Dışa Aktar' }).click()]);
     expect(download.suggestedFilename()).toBe(`trainer-pro-veriler-${new Date().toISOString().slice(0, 10)}.json`);
     const data = JSON.parse(require('fs').readFileSync(await download.path(), 'utf8'));
-    expect(Object.keys(data).sort()).toEqual(['exportedAt', 'healthMetrics', 'measurements', 'profile', 'schedules', 'workoutSessions', 'workouts']);
+    expect(Object.keys(data).sort()).toEqual(['exportedAt', 'healthMetrics', 'measurements', 'profile', 'schedules', 'sessionSteps', 'workoutSessions', 'workouts']);
     expect(data.profile.email).toBe(env.clientEmail);
     for (const key of ['measurements', 'workouts', 'schedules', 'healthMetrics', 'workoutSessions']) {
       for (const item of data[key]) expect(item.member_id).toBe(data.profile.id);
     }
+    const sessionIds = data.workoutSessions.map(item => item.id); // steps carry no member_id: they must belong to the client's sessions
+    for (const step of data.sessionSteps) expect(sessionIds).toContain(step.workout_session_id);
   });
 });

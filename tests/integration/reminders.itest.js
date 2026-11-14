@@ -114,4 +114,47 @@ describe('reminder Edge Function (test project)', { skip }, () => {
     const [after] = await rest(admin, 'GET', `schedule_notifications?select=push_sent_at&id=eq.${note.id}`);
     assert.ok(after.push_sent_at, 'notification was not marked as sent');
   });
+
+  const addNote = async (extra = {}) => {
+    const [note] = await rest(admin, 'POST', 'schedule_notifications', { id: uid(), member_id: memberId, action: 'updated', message: 'E2E: seans saati değişti', ...extra });
+    cleanup.push(['schedule_notifications', note.id]);
+    return note;
+  };
+  const sentAt = async note => (await rest(admin, 'GET', `schedule_notifications?select=push_sent_at&id=eq.${note.id}`))[0].push_sent_at;
+  const subscriptionIds = () => rest(admin, 'GET', `push_subscriptions?select=id&member_id=eq.${memberId}`).then(rows => rows.map(row => row.id));
+
+  it('deletes a subscription the push service reports as gone (410) on a reminder run', async () => {
+    const gone = await addSubscription(`${FAKE_PUSH}/gone`);
+    const schedule = await addScheduleIn(3600000);
+    assert.equal((await run(CRON_SECRET)).status, 200);
+    assert.ok(!(await subscriptionIds()).includes(gone.id), 'expired subscription was kept');
+    assert.equal((await deliveries(schedule.id)).length, 0);
+  });
+
+  it('a gone subscription does not block a schedule-change notification: removed and marked sent', async () => {
+    const gone = await addSubscription(`${FAKE_PUSH}/gone`);
+    const note = await addNote();
+    await run(CRON_SECRET);
+    assert.ok(!(await subscriptionIds()).includes(gone.id));
+    assert.ok(await sentAt(note), 'notification should be marked sent once every subscription is delivered or gone');
+  });
+
+  it('a failing push (500) keeps the subscription and leaves the notification unsent until it succeeds', async () => {
+    const sub = await addSubscription(`${FAKE_PUSH}/fail`);
+    const note = await addNote();
+    await run(CRON_SECRET);
+    assert.ok((await subscriptionIds()).includes(sub.id), 'a transient failure must not delete the subscription');
+    assert.equal(await sentAt(note), null, 'a failed send was marked as sent');
+    await rest(admin, 'PATCH', `push_subscriptions?id=eq.${sub.id}`, { endpoint: `${FAKE_PUSH}/ok` });
+    await run(CRON_SECRET);
+    assert.ok(await sentAt(note), 'notification was not retried after the endpoint recovered');
+  });
+
+  it('a push that still fails after an hour is given up (marked sent) so it cannot repeat forever', async () => {
+    const sub = await addSubscription(`${FAKE_PUSH}/fail`);
+    const note = await addNote({ created_at: new Date(Date.now() - 2 * 3600000).toISOString() });
+    await run(CRON_SECRET);
+    assert.ok((await subscriptionIds()).includes(sub.id), 'a transient failure must not delete the subscription');
+    assert.ok(await sentAt(note), 'an hour-old failing notification is still being retried');
+  });
 });

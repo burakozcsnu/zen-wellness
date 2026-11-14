@@ -16,6 +16,7 @@ function world(total, cap = 1000, error = null, noCount = false) {
       const chain = {
         select(columns, options) { request.columns = columns; request.count = options?.count; return chain; },
         eq(column, value) { request.filters.push([column, value]); return chain; },
+        in(column, values) { request.filters.push([column, 'in', values]); return chain; },
         order(column) { request.order = column; return chain; },
         range(from, to) {
           request.range = [from, to];
@@ -99,4 +100,17 @@ test('reads every column by default', async () => {
   const { service, requests } = world(10);
   await service.fetchAll('olcumler');
   assert.equal(requests[0].columns, '*');
+});
+
+test('a list filter becomes an "in" filter on every page', async () => {
+  const { service, requests } = world(1500);
+  const rows = await service.fetchAll('workout_session_steps', 1000, { workout_session_id: [1, 2, 3] });
+  assert.equal(rows.length, 1500);
+  assert.ok(requests.every(request => request.filters.some(([column, op, values]) => column === 'workout_session_id' && op === 'in' && values.join() === '1,2,3')));
+});
+
+test('an empty list filter returns nothing without a request', async () => {
+  const { service, requests } = world(10);
+  assert.equal((await service.fetchAll('workout_session_steps', 1000, { workout_session_id: [] })).length, 0);
+  assert.equal(requests.length, 0);
 });

@@ -37,42 +37,56 @@ const tables = [
   ,'workout_session_steps'
 ];
 
+// Every policy this script creates is recorded here by createPolicies(), so the unknown-policy guard cannot drift.
+const knownPolicies = new Set();
+function createPolicies(sql) {
+  // Policy names must be double-quoted to be recorded; an unquoted name would be rejected by the guard.
+  for (const match of sql.matchAll(/CREATE POLICY "([^"]+)"/g)) knownPolicies.add(match[1]);
+  return client.query(sql);
+}
+
 async function migrate() {
+  let began = false; // ROLLBACK on a never-connected client would hang forever
   try {
     await client.connect();
+    await client.query('BEGIN');
+    began = true;
+    const startedAt = Date.now();
+    await client.query(`SET LOCAL lock_timeout = '15s'`);
     for (const table of tables) {
-      await client.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
-      await client.query(`DROP POLICY IF EXISTS "${table}_authenticated_access" ON ${table};`);
-      await client.query(`DROP POLICY IF EXISTS "${table}_admin_access" ON ${table};`);
-      await client.query(`DROP POLICY IF EXISTS "${table}_member_read" ON ${table};`);
+      const stmts = []; // one round trip per table keeps the transaction short
+      stmts.push(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+      stmts.push(`DROP POLICY IF EXISTS "${table}_authenticated_access" ON ${table};`);
+      stmts.push(`DROP POLICY IF EXISTS "${table}_admin_access" ON ${table};`);
+      stmts.push(`DROP POLICY IF EXISTS "${table}_member_read" ON ${table};`);
       if (table === 'uyeler') {
-        await client.query(`DROP POLICY IF EXISTS "uyeler_member_update" ON uyeler;`);
+        stmts.push(`DROP POLICY IF EXISTS "uyeler_member_update" ON uyeler;`);
       }
       if (table === 'dokumanlar') {
-        await client.query(`DROP POLICY IF EXISTS "dokumanlar_member_consent_insert" ON dokumanlar;`);
+        stmts.push(`DROP POLICY IF EXISTS "dokumanlar_member_consent_insert" ON dokumanlar;`);
       }
       if (table === 'olcumler') {
-        await client.query(`DROP POLICY IF EXISTS "olcumler_member_insert" ON olcumler;`);
+        stmts.push(`DROP POLICY IF EXISTS "olcumler_member_insert" ON olcumler;`);
       }
       if (table === 'push_subscriptions') {
-        await client.query(`DROP POLICY IF EXISTS "push_subscriptions_member_access" ON push_subscriptions;`);
+        stmts.push(`DROP POLICY IF EXISTS "push_subscriptions_member_access" ON push_subscriptions;`);
       }
       if (table === 'push_reminder_deliveries') {
-        await client.query(`DROP POLICY IF EXISTS "push_reminder_deliveries_member_read" ON push_reminder_deliveries;`);
+        stmts.push(`DROP POLICY IF EXISTS "push_reminder_deliveries_member_read" ON push_reminder_deliveries;`);
       }
       if (table === 'schedule_notifications') {
-        await client.query(`DROP POLICY IF EXISTS "schedule_notifications_member_read" ON schedule_notifications;`);
+        stmts.push(`DROP POLICY IF EXISTS "schedule_notifications_member_read" ON schedule_notifications;`);
       }
       if (table === 'schedule_attendance') {
-        await client.query(`DROP POLICY IF EXISTS "schedule_attendance_member_access" ON schedule_attendance;`);
+        stmts.push(`DROP POLICY IF EXISTS "schedule_attendance_member_access" ON schedule_attendance;`);
       }
       if (table === 'workout_completions') {
-        await client.query(`DROP POLICY IF EXISTS "workout_completions_member_access" ON workout_completions;`);
+        stmts.push(`DROP POLICY IF EXISTS "workout_completions_member_access" ON workout_completions;`);
       }
       if (['device_connections', 'health_metrics', 'workout_sessions', 'workout_session_steps'].includes(table)) {
-        await client.query(`DROP POLICY IF EXISTS "${table}_member_access" ON ${table};`);
+        stmts.push(`DROP POLICY IF EXISTS "${table}_member_access" ON ${table};`);
       }
-      await client.query(`
+      stmts.push(`
         CREATE POLICY "${table}_admin_access"
         ON ${table}
         FOR ALL
@@ -80,8 +94,9 @@ async function migrate() {
         USING ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
         WITH CHECK ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
       `);
+      await createPolicies(stmts.join('\n'));
     }
-    await client.query(`
+    await createPolicies(`
       CREATE OR REPLACE FUNCTION public.assign_default_member_role()
       RETURNS trigger
       LANGUAGE plpgsql
@@ -347,7 +362,7 @@ async function migrate() {
 
     // Document files (private bucket "dokumanlar", one folder per member id):
     // trainers manage all files, members may only read files in their own folder.
-    await client.query(`
+    await createPolicies(`
       DROP POLICY IF EXISTS "dokumanlar_storage_admin_access" ON storage.objects;
       CREATE POLICY "dokumanlar_storage_admin_access"
       ON storage.objects
@@ -369,7 +384,7 @@ async function migrate() {
     `);
 
     // Consent receipts: a client may upload ONLY a kvkk_riza_* file directly inside their own folder.
-    await client.query(`
+    await createPolicies(`
       DROP POLICY IF EXISTS "dokumanlar_storage_member_consent_insert" ON storage.objects;
       CREATE POLICY "dokumanlar_storage_member_consent_insert"
       ON storage.objects
@@ -398,7 +413,8 @@ async function migrate() {
         END IF;
         FOREACH t IN ARRAY ARRAY['uyeler','programlar','olcumler','antrenmanlar','dokumanlar',
                                  'weekly_program_schedule','master_egzersizler','master_besinler',
-                                 'beslenme_planlari','device_connections','health_metrics','workout_sessions'] LOOP
+                                 'beslenme_planlari','device_connections','health_metrics','workout_sessions',
+                                 'workout_session_steps'] LOOP
           IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = t)
              AND NOT EXISTS (SELECT 1 FROM pg_publication_tables
                              WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = t) THEN
@@ -450,7 +466,7 @@ async function migrate() {
       END $$;
     `);
 
-    const requiredPolicies = ['device_connections_member_read', 'health_metrics_member_read', 'workout_sessions_member_access'];
+    const requiredPolicies = ['device_connections_member_read', 'health_metrics_member_read', 'workout_sessions_member_access', 'workout_session_steps_member_access'];
     const policyResult = await client.query(
       `SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND policyname = ANY($1::text[])`,
       [requiredPolicies]
@@ -477,6 +493,20 @@ async function migrate() {
         .join('\n  ');
       throw new Error(`Unsafe RLS policies found (anonymous or unconditional access):\n  ${list}`);
     }
+    // Guard: any policy this script did not create is refused (it would otherwise stay live unreviewed).
+    const allPolicies = await client.query(`
+      SELECT schemaname, tablename, policyname, roles::text AS roles, cmd
+      FROM pg_policies
+      WHERE schemaname IN ('public', 'storage')
+      ORDER BY schemaname, tablename, policyname
+    `);
+    const unknownPolicies = allPolicies.rows.filter(row => !knownPolicies.has(row.policyname));
+    if (unknownPolicies.length > 0) {
+      const list = unknownPolicies
+        .map(row => `${row.schemaname}.${row.tablename} "${row.policyname}" ${row.roles} ${row.cmd}`)
+        .join('\n  ');
+      throw new Error(`Unknown RLS policies found (not created by this script):\n  ${list}`);
+    }
     const tablesWithoutRls = await client.query(`
       SELECT c.relname
       FROM pg_class c
@@ -489,8 +519,11 @@ async function migrate() {
     }
 
     await client.query(`NOTIFY pgrst, 'reload schema';`);
+    await client.query('COMMIT');
     console.log('Admin-only RLS policies enabled.');
+    console.log(`Migration committed in ${((Date.now() - startedAt) / 1000).toFixed(1)} s.`);
   } catch (error) {
+    if (began) await client.query('ROLLBACK').catch(e => console.error('ROLLBACK failed:', e.message));
     console.error('Auth migration failed:', error);
     process.exitCode = 1;
   } finally {

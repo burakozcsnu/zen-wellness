@@ -5,16 +5,18 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.65.0",
-    "supabase": "^2.98.0"
+    "supabase": "^2.98.0",
+    "typescript": "5.9.3"
   },
   "scripts": {
     "test": "node --test \"tests/**/*.test.js\"",
     "test:seed": "node scripts/seed-test-db.js",
     "test:e2e": "playwright test",
-    "test:integration": "node --test \"tests/integration/*.itest.js\"",
+    "test:integration": "node --test --test-concurrency=1 \"tests/integration/*.itest.js\"",
     "test:perf:seed": "node scripts/seed-perf-data.js --members=50",
     "test:perf": "node --test --test-concurrency=1 \"tests/perf/*.perf.js\" && playwright test -c playwright.perf.config.js",
     "test:perf:seed:extreme": "node scripts/seed-perf-data.js --members=500",
-    "test:functions:deploy": "node scripts/deploy-test-functions.js"
+    "test:functions:deploy": "node scripts/deploy-test-functions.js",
+    "typecheck": "tsc -p types/tsconfig.json"
   }
 }

@@ -8,28 +8,29 @@
         content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Zen Wellness Club</title>
     <link rel="manifest" href="manifest.webmanifest?v=1.0">
-    <link rel="icon" type="image/png" href="zen-wellness-icon.png?v=1.0">
+    <link rel="icon" type="image/png" href="icons/icon-192.png">
 
     <!-- Apple PWA Tags -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Zen Wellness Club">
-    <link rel="apple-touch-icon" href="zen-wellness-icon.png?v=1.0">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
 
-    <link rel="stylesheet" href="style.css?v=1.3.122">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.105.1/dist/umd/supabase.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.1/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="style.css?v=1.3.128">
+    <script src="vendor/supabase.js?v=1.3.128"></script>
+    <script src="vendor/chart.umd.min.js?v=1.3.128"></script>
     </head>
 
     <body class="dark-theme">
     <div id="version-tag"
         style="position: fixed; bottom: 5px; left: 5px; font-size: 12px; color: var(--text-dim); z-index: 999999; pointer-events: none;">
-        v1.3.70 - Zen Wellness Club</div>
+        </div>
     <div id="sync-status" class="sync-status" role="status" aria-live="polite">Bağlanıyor...</div>
+    <button type="button" id="sync-pending-button" class="sync-pending-button" hidden></button>
     <section id="brand-splash" class="brand-splash" aria-label="Zen Wellness Club giriş">
         <button class="brand-splash-logo" type="button" aria-label="Rolleri göster" onclick="showPortalRoles()">
-            <img src="zen-wellness-logo.png?v=1.0" alt="Zen Wellness Club logosu">
+            <img src="icons/logo-720.png" alt="Zen Wellness Club logosu">
         </button>
         <div class="brand-splash-copy">
             <span>İyi yaşam, dengeli gelişim.</span>
@@ -65,7 +66,7 @@
     <section id="member-portal" class="member-portal" hidden>
         <header class="member-portal-header">
             <div class="member-portal-brand">
-                <img src="zen-wellness-logo.png?v=1.0" alt="Zen Wellness Club">
+                <img src="icons/logo-720.png" alt="Zen Wellness Club">
                 <span>Wellness Club</span>
             </div>
             <button type="button" class="btn-logout" onclick="window.handleAdminLogout()">Çıkış Yap</button>
@@ -75,22 +76,41 @@
             <div id="member-portal-status" class="sync-status" role="status" aria-live="polite"></div>
             <nav class="member-portal-tabs" aria-label="Danışan paneli bölümleri">
                 <button type="button" class="active" data-portal-tab="overview"
-                    onclick="window.selectMemberPortalTab('overview')">Özet</button>
+                    onclick="window.selectMemberPortalTab('overview')"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>Özet</button>
                 <button type="button" data-portal-tab="schedule"
-                    onclick="window.selectMemberPortalTab('schedule')">Programım</button>
+                    onclick="window.selectMemberPortalTab('schedule')"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Programım</button>
                 <button type="button" data-portal-tab="notifications"
-                    onclick="window.selectMemberPortalTab('notifications')">Bildirimler</button>
+                    onclick="window.selectMemberPortalTab('notifications')"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 17V11a6 6 0 0 1 12 0v6l2 2H4z"/><path d="M10 21h4"/></svg>Bildirimler</button>
                 <button type="button" data-portal-tab="measurements"
-                    onclick="window.selectMemberPortalTab('measurements')">Ölçümler</button>
+                    onclick="window.selectMemberPortalTab('measurements')"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg>Ölçümler</button>
                 <button type="button" data-portal-tab="workouts"
-                    onclick="window.selectMemberPortalTab('workouts')">Antrenman</button>
+                    onclick="window.selectMemberPortalTab('workouts')"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/></svg>Antrenman</button>
                 <button type="button" data-portal-tab="nutrition"
-                    onclick="window.selectMemberPortalTab('nutrition')">Beslenme</button>
+                    onclick="window.selectMemberPortalTab('nutrition')"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7c-2-2-7-1-7 5 0 4 3 9 7 9s7-5 7-9c0-6-5-7-7-5z"/><path d="M12 7c0-2 1-4 3-4"/></svg>Beslenme</button>
                 <button type="button" data-portal-tab="documents"
-                    onclick="window.selectMemberPortalTab('documents')">Belgeler</button>
+                    onclick="window.selectMemberPortalTab('documents')"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h6"/></svg>Belgeler</button>
             </nav>
             <div id="member-portal-content"></div>
         </main>
+        <div id="member-session" class="member-session" role="dialog" aria-modal="true" aria-labelledby="member-session-title" hidden>
+            <header class="member-session-header">
+                <h2 id="member-session-title" tabindex="-1"></h2>
+                <button type="button" class="btn-secondary" onclick="window.closeMemberSession()">Kapat</button>
+                <div class="member-session-restset">
+                    <span id="member-session-rest-label"></span>
+                    <button type="button" class="btn-secondary" aria-label="Dinlenme süresini azalt" onclick="window.adjustSessionRest(-15)">−</button>
+                    <button type="button" class="btn-secondary" aria-label="Dinlenme süresini artır" onclick="window.adjustSessionRest(15)">+</button>
+                </div>
+            </header>
+            <div id="member-session-list" class="member-session-list"></div>
+            <div id="member-session-rest-bar" class="member-session-restbar" role="timer" hidden>
+                <span id="member-session-rest-text" aria-hidden="true"></span>
+                <button type="button" class="btn-secondary" onclick="window.extendSessionRest()">+15 sn</button>
+                <button type="button" class="btn-secondary" onclick="window.skipSessionRest()">Geç</button>
+                <span id="member-session-rest-live" class="session-hidden" aria-live="polite"></span>
+            </div>
+            <label id="member-session-haptic" class="session-hidden" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label>
+        </div>
     </section>
     <div id="member-assessment" class="member-assessment" hidden aria-hidden="true">
         <div class="member-assessment-card">
@@ -115,7 +135,7 @@
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="logo">
-                <img class="app-logo" src="zen-wellness-logo.png?v=1.0" alt="Zen Wellness Club">
+                <img class="app-logo" src="icons/logo-720.png" alt="Zen Wellness Club">
                 <span class="logo-wordmark">Wellness Club</span>
             </div>
             <nav>
@@ -142,7 +162,7 @@
                 <button class="mobile-logo" type="button" aria-label="Ana menüyü aç" aria-expanded="false"
                     onclick="toggleMobileMenu()">
                     <span class="mobile-logo-mark">
-                        <img class="app-logo" src="zen-wellness-logo.png?v=1.0" alt="Zen Wellness Club">
+                        <img class="app-logo" src="icons/logo-720.png" alt="Zen Wellness Club">
                     </span>
                     <span class="mobile-wordmark">Wellness Club</span>
                 </button>
@@ -282,6 +302,7 @@
                                 <span></span> Raporu Kopyala
                             </button>
                         </div>
+                        <section id="coach-insights" class="coach-card" aria-label="Koç özeti"></section>
                         <div class="dashboard-stats-grid"
                             style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));">
                             <div class="stat-card" style="background: rgba(0, 242, 254, 0.05);">
@@ -356,11 +377,15 @@
                                     Sıfırla</button>
                             </div>
                         </div>
+                        <div id="member-sessions-card" class="card"></div>
                         <div
                             style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
                             <h3>Antrenman Geçmişi</h3>
-                            <button class="btn-primary" onclick="window.openWorkoutModal()">+ Yeni Antrenman
-                                Ekle</button>
+                            <div class="workout-add-actions">
+                                <button id="btn-repeat-workout" class="btn-secondary" onclick="window.repeatLastWorkout()" hidden>Son antrenmanı tekrarla</button>
+                                <button class="btn-primary" onclick="window.openWorkoutModal()">+ Yeni Antrenman
+                                    Ekle</button>
+                            </div>
                         </div>
                         <div id="workout-history-tree" class="history-tree"></div>
                     </div>
@@ -535,7 +560,7 @@
 
     <!-- MODALS -->
     <div id="modal-program" class="modal">
-        <div class="modal-content wide"><span class="close" onclick="closeModal('modal-program')">&times;</span>
+        <div class="modal-content wide"><span class="close" role="button" tabindex="0" aria-label="Kapat" onclick="closeModal('modal-program')">&times;</span>
             <h2>Şablon Üret</h2>
             <form onsubmit="handleProgramSubmit(event)"><input type="hidden" id="edit-program-id"><label class="field-label" for="p-name">Şablon adı</label><input type="text"
                     id="p-name" placeholder="Şablon Adı" required>
@@ -548,7 +573,7 @@
     <!-- MODAL: Yeni/Düzenle Egzersiz (Unified Manager) -->
     <div id="modal-new-exercise" class="modal">
         <div class="modal-content">
-            <span class="close" onclick="closeModal('modal-new-exercise')">&times;</span>
+            <span class="close" role="button" tabindex="0" aria-label="Kapat" onclick="closeModal('modal-new-exercise')">&times;</span>
             <h2 id="ex-modal-title">Egzersiz Yönetimi</h2>
             <form onsubmit="saveNewExercise(event)">
                 <input type="hidden" id="edit-ex-id">
@@ -604,7 +629,7 @@
     <!-- MODAL: Yeni Antrenman (Workout) -->
     <div id="modal-workout" class="modal">
         <div class="modal-content wide">
-            <span class="close" onclick="closeModal('modal-workout')">&times;</span>
+            <span class="close" role="button" tabindex="0" aria-label="Kapat" onclick="closeModal('modal-workout')">&times;</span>
             <h2 id="w-modal-title">Yeni Antrenman Kaydet</h2>
             <div class="form-group" style="margin-bottom: 1rem;">
                 <label style="display:block; margin-bottom:0.2rem; color:var(--text-dim); font-size:0.8rem;" for="form-template-loader">Hazır
@@ -649,7 +674,7 @@
     <!-- MODAL: Yeni/Düzenle Besin -->
     <div id="modal-new-food" class="modal">
         <div class="modal-content">
-            <span class="close" onclick="closeModal('modal-new-food')">&times;</span>
+            <span class="close" role="button" tabindex="0" aria-label="Kapat" onclick="closeModal('modal-new-food')">&times;</span>
             <h2 id="f-modal-title">Besin Yönetimi</h2>
             <form onsubmit="saveNewFood(event)">
                 <input type="hidden" id="edit-f-id">
@@ -706,7 +731,7 @@
     <!-- MODAL: Yeni Beslenme Planı -->
     <div id="modal-diet" class="modal">
         <div class="modal-content wide">
-            <span class="close" onclick="closeModal('modal-diet')">&times;</span>
+            <span class="close" role="button" tabindex="0" aria-label="Kapat" onclick="closeModal('modal-diet')">&times;</span>
             <h2 id="d-modal-title">Yeni Beslenme Planı</h2>
             <form onsubmit="saveDietPlan(event)">
                 <div class="grid" style="grid-template-columns: 1fr 2fr; gap: 0.5rem; margin-bottom: 1rem;">
@@ -739,7 +764,7 @@
     <!-- MODAL: Kardiyo Testi -->
     <div id="modal-cardio" class="modal">
         <div class="modal-content wide">
-            <span class="close" onclick="closeModal('modal-cardio')">&times;</span>
+            <span class="close" role="button" tabindex="0" aria-label="Kapat" onclick="closeModal('modal-cardio')">&times;</span>
             <h2 id="c-modal-title">Kardiyo & Metabolizma Testi</h2>
             <form onsubmit="saveCardioTest(event)">
                 <input type="hidden" id="c-id">
@@ -806,7 +831,7 @@
     <!-- MODAL: Yeni/Düzenle Ölçüm -->
     <div id="modal-measurement" class="modal">
         <div class="modal-content wide">
-            <span class="close" onclick="closeModal('modal-measurement')">&times;</span>
+            <span class="close" role="button" tabindex="0" aria-label="Kapat" onclick="closeModal('modal-measurement')">&times;</span>
             <h2 id="m-modal-title">Ölçüm Yönetimi</h2>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
                 <p style="color:var(--text-dim); font-size:0.9rem; margin:0;">Yeni ölçüm verilerini girin.</p>
@@ -880,7 +905,7 @@
     <!-- MODAL: Geri Al Logu -->
     <div id="modal-undo-log" class="modal">
         <div class="modal-content wide">
-            <span class="close" onclick="closeModal('modal-undo-log')">&times;</span>
+            <span class="close" role="button" tabindex="0" aria-label="Kapat" onclick="closeModal('modal-undo-log')">&times;</span>
             <h2>↩ Geri Al (İşlem Geçmişi)</h2>
             <p style="margin-bottom:1rem; color:var(--text-dim); font-size:0.9rem;">Son yaptığınız işlemler aşağıda
                 listelenmiştir. Geri almak istediğiniz işleme tıklayın.</p>
@@ -890,8 +915,17 @@
         </div>
     </div>
 
+    <!-- MODAL: Bekleyen değişiklikler -->
+    <div id="modal-sync" class="modal">
+        <div class="modal-content wide">
+            <span class="close" role="button" tabindex="0" aria-label="Kapat" onclick="closeModal('modal-sync')">&times;</span>
+            <h2>Bekleyen değişiklikler</h2>
+            <div id="sync-list" class="sync-list"></div>
+        </div>
+    </div>
+
     <div id="modal-detail" class="modal">
-        <div class="modal-content wide"><span class="close" onclick="closeModal('modal-detail')">&times;</span>
+        <div class="modal-content wide"><span class="close" role="button" tabindex="0" aria-label="Kapat" onclick="closeModal('modal-detail')">&times;</span>
             <h2 id="detail-title">Detaylar</h2>
             <div id="detail-body"></div>
             <div class="modal-btns"><button class="btn-undo" onclick="globalUndo()">Geri Al</button></div>
@@ -899,7 +933,7 @@
     </div>
         <div id="modal-schedule" class="modal">
             <div class="modal-content">
-                <span class="close" onclick="closeModal('modal-schedule')">&times;</span>
+                <span class="close" role="button" tabindex="0" aria-label="Kapat" onclick="closeModal('modal-schedule')">&times;</span>
                 <h2 id="schedule-modal-title">Haftalık programa ekle</h2>
                 <form onsubmit="window.saveScheduleEntry(event)">
                     <input type="hidden" id="schedule-id">
@@ -921,7 +955,7 @@
         </div>
     </div>
     <div id="modal-member" class="modal">
-        <div class="modal-content"><span class="close" onclick="closeModal('modal-member')">&times;</span>
+        <div class="modal-content"><span class="close" role="button" tabindex="0" aria-label="Kapat" onclick="closeModal('modal-member')">&times;</span>
                         <h2>Üye Kaydı</h2>
             <form onsubmit="handleMemberSubmit(event)"><input type="hidden" id="edit-member-id"><label class="field-label" for="m-name">Ad soyad</label><input type="text"
                     id="m-name" placeholder="Ad Soyad" required>
@@ -945,14 +979,14 @@
         </div>
     </div>
     <div id="wizard-modal" class="modal">
-        <div class="modal-content wizard-layout"><span class="close" onclick="closeModal('wizard-modal')">&times;</span>
+        <div class="modal-content wizard-layout"><span class="close" role="button" tabindex="0" aria-label="Kapat" onclick="closeModal('wizard-modal')">&times;</span>
             <div id="wizard-content"></div>
         </div>
     </div>
 
-    <script src="data-service.js?v=1.3.122"></script>
-    <script src="exercise-domain.js?v=1.3.122"></script>
-    <script src="script.js?v=1.3.122"></script>
+    <script src="data-service.js?v=1.3.128"></script>
+    <script src="exercise-domain.js?v=1.3.128"></script>
+    <script src="script.js?v=1.3.128"></script>
 </body>
 
 </html>

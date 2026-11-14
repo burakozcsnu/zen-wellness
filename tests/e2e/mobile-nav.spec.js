@@ -1,6 +1,8 @@
 // Phone behaviour: swipe opens/closes the menu, the search bar does not pin over headings,
 // and the client header buttons keep their text inside the box. Phone project only.
 const { test, expect, login } = require('./fixtures');
+// The service worker would answer style.css from its cache, past the page.route rewrite below.
+test.use({ serviceWorkers: 'block' });
 const { env } = require('../helpers/api');
 
 test.beforeEach(({}, info) => test.skip(!info.project.name.startsWith('phone'), 'phone layout only'));

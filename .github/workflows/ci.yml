@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -29,8 +31,15 @@ jobs:
       - name: Syntax check
         run: |
           for f in script.js data-service.js exercise-domain.js sw.js .supabase/*.js scripts/*.js; do node --check "$f"; done
+      - name: Type check
+        run: npm run typecheck
       - name: Unit tests
         run: npm test
+      - name: Shell files changed together with a version bump
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+        run: node scripts/check-version-bump.js "origin/$BASE"
 
   e2e:
     needs: unit

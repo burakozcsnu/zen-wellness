@@ -8,6 +8,7 @@ const vapidPublicKey = Deno.env.get('VAPID_PUBLIC_KEY');
 const vapidPrivateKey = Deno.env.get('VAPID_PRIVATE_KEY');
 const timezone = Deno.env.get('SCHEDULE_TIMEZONE') || 'Europe/Istanbul';
 const cronSecret = Deno.env.get('CRON_SECRET');
+const RETRY_WINDOW_MS = 60 * 60 * 1000; // schedule-change pushes that keep failing are given up after this
 
 if (!supabaseUrl || !serviceRoleKey || !vapidPublicKey || !vapidPrivateKey || !cronSecret) {
     throw new Error('SUPABASE_URL, DATABASE_SECRET_KEY, VAPID_* and CRON_SECRET are required.');
@@ -63,6 +64,29 @@ const fetchJson = async (path: string, options: RequestInit = {}) => {
     return text ? JSON.parse(text) : null;
 };
 
+// 'ok' = delivered, 'gone' = the push service says the subscription no longer exists (404/410, row removed), 'failed' = anything else.
+const sendPush = async (subscription: any, payload: string) => {
+    try {
+        await webpush.sendNotification({
+            endpoint: subscription.endpoint,
+            keys: { p256dh: subscription.p256dh, auth: subscription.auth }
+        }, payload);
+        return 'ok';
+    } catch (error) {
+        const status = (error as { statusCode?: number }).statusCode;
+        // Log only the subscription id and status: endpoints and keys identify a person's device.
+        console.error(`Push failed for subscription ${subscription.id}: status ${status ?? 'none'}`);
+        if (status !== 404 && status !== 410) return 'failed';
+        try {
+            await fetchJson(`push_subscriptions?id=eq.${subscription.id}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+        } catch (deleteError) {
+            console.error('Removing expired subscription failed:', deleteError);
+            return 'failed';
+        }
+        return 'gone';
+    }
+};
+
 Deno.serve(async request => {
     if (request.headers.get('authorization') !== `Bearer ${cronSecret}`) {
         return new Response('Unauthorized', { status: 401 });
@@ -73,7 +97,7 @@ Deno.serve(async request => {
     const subscriptions = await fetchJson('push_subscriptions?select=*');
     let sent = 0;
     const scheduleNotifications = await fetchJson(
-        'schedule_notifications?select=id,member_id,message,action&push_sent_at=is.null&order=created_at.asc&limit=100'
+        'schedule_notifications?select=id,member_id,message,action,created_at&push_sent_at=is.null&order=created_at.asc&limit=100'
     );
 
     for (const schedule of schedules) {
@@ -99,11 +123,8 @@ Deno.serve(async request => {
                 // Relative: the service worker resolves it against its own scope (the app's address).
                 url: './'
             });
+            if (await sendPush(subscription, payload) !== 'ok') continue;
             try {
-                await webpush.sendNotification({
-                    endpoint: subscription.endpoint,
-                    keys: { p256dh: subscription.p256dh, auth: subscription.auth }
-                }, payload);
                 await fetchJson('push_reminder_deliveries', {
                     method: 'POST',
                     headers: { Prefer: 'return=minimal' },
@@ -117,27 +138,26 @@ Deno.serve(async request => {
                 });
                 sent += 1;
             } catch (error) {
-                console.error('Push delivery failed:', error);
+                console.error('Recording reminder delivery failed:', error);
             }
         }
     }
     for (const notification of scheduleNotifications) {
+        let retry = false;
         for (const subscription of subscriptions.filter((item: any) => item.member_id === notification.member_id)) {
-            try {
-                await webpush.sendNotification({
-                    endpoint: subscription.endpoint,
-                    keys: { p256dh: subscription.p256dh, auth: subscription.auth }
-                }, JSON.stringify({
-                    title: 'Zen Wellness Club program güncellemesi',
-                    body: notification.message,
-                    tag: `schedule-notification-${notification.id}`,
-                    url: './'
-                }));
-                sent += 1;
-            } catch (error) {
-                console.error('Schedule update push failed:', error);
-            }
+            const result = await sendPush(subscription, JSON.stringify({
+                title: 'Zen Wellness Club program güncellemesi',
+                body: notification.message,
+                tag: `schedule-notification-${notification.id}`,
+                url: './'
+            }));
+            if (result === 'ok') sent += 1;
+            else if (result === 'failed') retry = true;
         }
+        // Leave push_sent_at empty after a transient failure so the next run retries, but give up after an hour:
+        // a permanently failing device must not re-alert the healthy ones forever or block the 100-row queue.
+        // A member with no subscriptions is marked sent.
+        if (retry && Date.now() - new Date(notification.created_at).getTime() < RETRY_WINDOW_MS) continue;
         await fetchJson(`schedule_notifications?id=eq.${notification.id}`, {
             method: 'PATCH',
             headers: { Prefer: 'return=minimal' },

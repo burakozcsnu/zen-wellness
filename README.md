@@ -9,7 +9,7 @@ Turkish-language trainer/gym management panel. Vanilla JS single-page PWA (iPad-
 | `index.html`, `style.css`, `script.js` | App shell, styling, app logic |
 | `data-service.js` | Supabase wrapper with offline write queue and conflict detection |
 | `exercise-domain.js` | Exercise catalog normalization and filtering |
-| `sw.js`, `manifest.webmanifest` | PWA manifest and push-notification service worker |
+| `sw.js`, `manifest.webmanifest` | PWA manifest; service worker (shell cache for offline open, push notifications) |
 | `.supabase/` | Node database migrations (`pg`) and seed catalogs |
 | `supabase/functions/send-schedule-reminders/` | Edge Function that sends session reminder pushes |
 | `.github/workflows/deploy-pages.yml` | On push to `main`: run migrations, then deploy to Pages |

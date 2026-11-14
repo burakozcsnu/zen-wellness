@@ -54,6 +54,11 @@ describe('migrations (test database)', () => {
     assert.equal(await snapshot(db), before, 'policies or RLS flags drifted after a re-run');
   });
 
+  it('workout_session_steps is in the live-sync publication, so the trainer sees new sets at once', async () => {
+    const rows = (await db.query("SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'workout_session_steps'")).rows;
+    assert.equal(rows.length, 1);
+  });
+
   it('every public table has row level security enabled', async () => {
     const rows = (await db.query("SELECT relname FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r' AND NOT relrowsecurity")).rows;
     assert.deepEqual(rows, [], `tables without RLS: ${rows.map(r => r.relname).join(', ')}`);
@@ -68,5 +73,37 @@ describe('migrations (test database)', () => {
       await db.query('DROP POLICY IF EXISTS itest_anon_leak ON olcumler');
     }
     assert.ok(run('migrate_auth.js').ok, 'migrate_auth.js should pass again once the leak is removed');
+  });
+
+  it('a table is protected by the script that creates it, even if the policy script fails', async () => {
+    const rls = async () => (await db.query("SELECT relrowsecurity FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relname = 'workout_completions'")).rows[0].relrowsecurity;
+    try {
+      await db.query('ALTER TABLE workout_completions DISABLE ROW LEVEL SECURITY');
+      assert.equal(await rls(), false);
+      const result = run('migrate.js');
+      assert.ok(result.ok, `migrate.js failed:\n${result.output.slice(-600)}`);
+      assert.equal(await rls(), true, 'migrate.js left workout_completions without row level security');
+    } finally {
+      await db.query('ALTER TABLE workout_completions ENABLE ROW LEVEL SECURITY');
+    }
+  });
+
+  it('an unknown policy is refused and the whole run is rolled back', async () => {
+    const memberRead = async () => (await db.query("SELECT 1 FROM pg_policies WHERE tablename = 'antrenmanlar' AND policyname = 'antrenmanlar_member_read'")).rowCount;
+    try {
+      await db.query('DROP POLICY IF EXISTS antrenmanlar_member_read ON antrenmanlar');
+      await db.query('CREATE POLICY itest_rogue ON programlar FOR SELECT TO authenticated USING (auth.uid() IS NOT NULL)');
+      const result = run('migrate_auth.js');
+      assert.equal(result.ok, false, 'migrate_auth.js accepted a policy it did not create');
+      assert.match(result.output, /itest_rogue/);
+      assert.equal(await memberRead(), 0, 'the failed run was not rolled back: antrenmanlar_member_read came back');
+      await db.query('DROP POLICY itest_rogue ON programlar');
+      const again = run('migrate_auth.js');
+      assert.ok(again.ok, `migrate_auth.js should pass once the rogue policy is gone:\n${again.output.slice(-600)}`);
+      assert.equal(await memberRead(), 1, 'antrenmanlar_member_read should exist after a clean run');
+    } finally {
+      await db.query('DROP POLICY IF EXISTS itest_rogue ON programlar');
+      if (!(await memberRead())) run('migrate_auth.js');
+    }
   });
 });

@@ -121,13 +121,18 @@ function validateKarateCatalog() {
 }
 
 async function migrate() {
+  let began = false; // ROLLBACK on a never-connected client would hang forever
   try {
     validateExtendedCatalog();
     validateKarateCatalog();
     await client.connect();
     console.log('Connected to Supabase successfully.');
+    await client.query('BEGIN');
+    began = true;
+    const startedAt = Date.now();
+    await client.query(`SET LOCAL lock_timeout = '15s'`);
 
-    await client.query(`
+    const foundationSql = `
       ALTER TABLE master_egzersizler
         ADD COLUMN IF NOT EXISTS gruplar JSONB DEFAULT '{}'::jsonb,
         ADD COLUMN IF NOT EXISTS body_part TEXT,
@@ -368,103 +373,99 @@ async function migrate() {
         source_url = NULLIF(gruplar ->> 'sourceUrl', '');
 
       NOTIFY pgrst, 'reload schema';
-    `);
-    for (const [index, [name, branch, bodyPart, muscles, equipment, level]] of exerciseCatalog.entries()) {
+    `;
+    await client.query(foundationSql);
+    // A new table must never be open to the API, even if migrate_auth.js fails later (it adds the policies).
+    // Only the form "CREATE TABLE IF NOT EXISTS name" is recognised here; other table-creating SQL gets no RLS.
+    for (const [, table] of foundationSql.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) {
+      await client.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+    }
+    // One query per catalog (not one per exercise) keeps the transaction, and its table locks, short.
+    const upsertExercises = rows => client.query(`
+      INSERT INTO master_egzersizler
+        (id, ad, brans, gruplar, body_part, classifications, style, drill, difficulty, source_url)
+      SELECT x.id, x.ad, x.brans, x.gruplar, x.body_part,
+             ARRAY(SELECT jsonb_array_elements_text(x.classifications)),
+             x.style, x.drill, x.difficulty, x.source_url
+      FROM jsonb_to_recordset($1::jsonb) AS x(
+        id bigint, ad text, brans text, gruplar jsonb, body_part text, classifications jsonb,
+        style text, drill text, difficulty text, source_url text)
+      ON CONFLICT (ad) DO UPDATE SET
+        brans = EXCLUDED.brans, gruplar = EXCLUDED.gruplar, body_part = EXCLUDED.body_part,
+        classifications = EXCLUDED.classifications, style = EXCLUDED.style, drill = EXCLUDED.drill,
+        difficulty = EXCLUDED.difficulty, source_url = EXCLUDED.source_url
+    `, [JSON.stringify(rows)]);
+    await upsertExercises(exerciseCatalog.map(([name, branch, bodyPart, muscles, equipment, level], index) => {
       const taxonomy = deriveExerciseTaxonomy({ name, branch, bodyPart, muscles });
-      await client.query(`
-        INSERT INTO master_egzersizler
-          (id, ad, brans, gruplar, body_part, classifications, style, drill, difficulty, source_url)
-        VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10)
-        ON CONFLICT (ad) DO UPDATE SET
-          brans = EXCLUDED.brans, gruplar = EXCLUDED.gruplar, body_part = EXCLUDED.body_part,
-          classifications = EXCLUDED.classifications, style = EXCLUDED.style, drill = EXCLUDED.drill,
-          difficulty = EXCLUDED.difficulty, source_url = EXCLUDED.source_url
-      `, [
-        910000000000 + index,
-        name,
-        branch,
-        JSON.stringify({
+      return {
+        id: 910000000000 + index,
+        ad: name,
+        brans: branch,
+        gruplar: {
           bodyPart,
           muscles,
           branch,
           equipment,
           level,
           source: 'Zen Wellness Club core library',
-          ...deriveExerciseTaxonomy({ name, branch, bodyPart, muscles })
-        }),
-        bodyPart,
-        taxonomy.classification,
-        taxonomy.styles?.[0] || null,
-        taxonomy.drill || null,
-        level,
-        null
-      ]);
-    }
-    for (const [index, exercise] of extendedExerciseCatalog.entries()) {
-      await client.query(`
-        INSERT INTO master_egzersizler
-          (id, ad, brans, gruplar, body_part, classifications, style, drill, difficulty, source_url)
-        VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10)
-        ON CONFLICT (ad) DO UPDATE SET
-          brans = EXCLUDED.brans, gruplar = EXCLUDED.gruplar, body_part = EXCLUDED.body_part,
-          classifications = EXCLUDED.classifications, style = EXCLUDED.style, drill = EXCLUDED.drill,
-          difficulty = EXCLUDED.difficulty, source_url = EXCLUDED.source_url
-      `, [
-        920000000000 + index,
-        exercise.name,
-        exercise.branch,
-        JSON.stringify({
-          bodyPart: exercise.bodyPart,
-          muscles: exercise.muscles,
-          branch: exercise.branch,
-          equipment: exercise.equipment,
-          level: exercise.level,
-          classification: exercise.classification,
-          styles: exercise.styles,
-          drill: exercise.drill,
-          sanskritName: exercise.sanskritName,
-          japaneseName: exercise.japaneseName,
-          source: exercise.source,
-          sourceUrl: exercise.sourceUrl
-        }),
-        exercise.bodyPart,
-        exercise.classification,
-        exercise.styles?.[0] || null,
-        exercise.drill || null,
-        exercise.level,
-        exercise.sourceUrl || null
-      ]);
-    }
-    for (const [index, exercise] of karateShotokanCatalog.entries()) {
-      await client.query(`
-        INSERT INTO master_egzersizler
-          (id, ad, brans, gruplar, body_part, classifications, style, drill, difficulty, source_url)
-        VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10)
-        ON CONFLICT (ad) DO UPDATE SET
-          brans = EXCLUDED.brans, gruplar = EXCLUDED.gruplar, body_part = EXCLUDED.body_part,
-          classifications = EXCLUDED.classifications, style = EXCLUDED.style, drill = EXCLUDED.drill,
-          difficulty = EXCLUDED.difficulty, source_url = EXCLUDED.source_url
-      `, [
-        930000000000 + index,
-        exercise.name,
-        exercise.branch,
-        JSON.stringify(exercise),
-        exercise.bodyPart,
-        exercise.classification,
-        exercise.style || null,
-        exercise.drill,
-        exercise.level,
-        exercise.sourceUrl
-      ]);
-    }
+          ...taxonomy
+        },
+        body_part: bodyPart,
+        classifications: taxonomy.classification,
+        style: taxonomy.styles?.[0] || null,
+        drill: taxonomy.drill || null,
+        difficulty: level,
+        source_url: null
+      };
+    }));
+    await upsertExercises(extendedExerciseCatalog.map((exercise, index) => ({
+      id: 920000000000 + index,
+      ad: exercise.name,
+      brans: exercise.branch,
+      gruplar: {
+        bodyPart: exercise.bodyPart,
+        muscles: exercise.muscles,
+        branch: exercise.branch,
+        equipment: exercise.equipment,
+        level: exercise.level,
+        classification: exercise.classification,
+        styles: exercise.styles,
+        drill: exercise.drill,
+        sanskritName: exercise.sanskritName,
+        japaneseName: exercise.japaneseName,
+        source: exercise.source,
+        sourceUrl: exercise.sourceUrl
+      },
+      body_part: exercise.bodyPart,
+      classifications: exercise.classification,
+      style: exercise.styles?.[0] || null,
+      drill: exercise.drill || null,
+      difficulty: exercise.level,
+      source_url: exercise.sourceUrl || null
+    })));
+    await upsertExercises(karateShotokanCatalog.map((exercise, index) => ({
+      id: 930000000000 + index,
+      ad: exercise.name,
+      brans: exercise.branch,
+      gruplar: exercise,
+      body_part: exercise.bodyPart,
+      classifications: exercise.classification,
+      style: exercise.style || null,
+      drill: exercise.drill,
+      difficulty: exercise.level,
+      source_url: exercise.sourceUrl
+    })));
     await client.query(`
       INSERT INTO schema_migrations (version)
       VALUES ('2026-11-01-data-foundation')
       ON CONFLICT (version) DO NOTHING
     `);
+    await client.query('COMMIT');
     console.log('Migration successful.');
+    console.log(`Migration committed in ${((Date.now() - startedAt) / 1000).toFixed(1)} s.`);
 
   } catch (err) {
+    if (began) await client.query('ROLLBACK').catch(e => console.error('ROLLBACK failed:', e.message));
     console.error('Migration failed:', err);
     process.exitCode = 1;
   } finally {

@@ -38,6 +38,10 @@ Before the indexes, saturation was about 52 req/s and p95 at 100 users was 4,181
 | Heap growth after 15 tours of every view | +0.1 MB | +0.1 MB | +15 MB |
 | First-load JS + CSS + fonts | 179 KB | 179 KB | 400 KB |
 
+2026-11-13 (M2, v1.3.125): first load is 321 KB compressed (desktop trainer 2.9 s). The rise from 179 KB is mostly the Inter fonts (124 KB, added 2026-11-11); M2 adds about 9 KB compressed. Measure behind a server that compresses like GitHub Pages and CI (`npx serve`): `python3 -m http.server` sends files uncompressed and reports about 616 KB, which fails the budget falsely.
+
+2026-11-13 (M3, v1.3.126): first load 329 KB compressed; desktop trainer 2.9 s, phone (4x CPU) 3.2 s, client portal 2.9 s, profile with 2,000 measurements 2.2 s, heap +0.1 MB. All within budget.
+
 ## Fixed on 2026-11-10 (branch `fix/scale-and-permissions`)
 
 1. **Silent data truncation.** Supabase returns at most 1,000 rows per request and the app loaded whole tables without paging (the trainer received 1,000 of 52,000 measurements; a client with 2,000 measurements saw 1,000). `fetchAll` in `data-service.js` now reads every page in a stable order, four pages at a time, and the trainer startup and client portal use it. Cost: correct data takes longer at scale (the old 3.5 s extreme-scale startup was fast only because it was wrong).

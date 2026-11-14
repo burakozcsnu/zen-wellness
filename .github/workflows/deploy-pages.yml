@@ -14,9 +14,10 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+# Never cancel a running database migration: a newer push waits for it instead.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   migrate-database:
@@ -66,7 +67,8 @@ jobs:
           mkdir -p _site
           cp index.html script.js data-service.js exercise-domain.js style.css sw.js favicon.svg manifest.webmanifest zen-wellness-logo.png zen-wellness-icon.png _site/
           cp -r fonts _site/fonts
-          cp -r fonts _site/fonts
+          cp -r vendor _site/vendor
+          cp -r icons _site/icons
 
       - name: Upload static site
         uses: actions/upload-pages-artifact@v4

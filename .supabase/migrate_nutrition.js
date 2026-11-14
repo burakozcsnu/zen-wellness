@@ -15,9 +15,14 @@ const client = new Client({
 });
 
 async function migrate() {
+  let began = false; // ROLLBACK on a never-connected client would hang forever
   try {
     await client.connect();
     console.log('Connected to Supabase successfully.');
+    await client.query('BEGIN');
+    began = true;
+    const startedAt = Date.now();
+    await client.query(`SET LOCAL lock_timeout = '15s'`);
 
     // Master Besinler Tablosu (Library)
     await client.query(`
@@ -47,7 +52,15 @@ async function migrate() {
     `);
     console.log('beslenme_planlari table ensured.');
 
+    // A new table must never be open to the API, even if migrate_auth.js fails later (it adds the policies).
+    for (const table of ['master_besinler', 'beslenme_planlari']) {
+      await client.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+    }
+    await client.query('COMMIT');
+    console.log(`Migration committed in ${((Date.now() - startedAt) / 1000).toFixed(1)} s.`);
+
   } catch (err) {
+    if (began) await client.query('ROLLBACK').catch(e => console.error('ROLLBACK failed:', e.message));
     console.error('Migration failed:', err);
     process.exitCode = 1;
   } finally {

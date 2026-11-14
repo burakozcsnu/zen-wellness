@@ -40,7 +40,8 @@ A Turkish-language progressive web app (PWA) for fitness and karate trainers. Tr
 | `exercise-domain.js` | Exercise and workout domain logic |
 | `sw.js`, `manifest.webmanifest` | Service worker and PWA manifest |
 | `supabase/functions/send-schedule-reminders/` | Edge Function for reminders. Not deployed by CI: deploy with the Supabase CLI and `--no-verify-jwt` (see `docs/local-setup.md`) |
-| `.supabase/migrate*.js` | Legacy migration scripts, run by CI against production. `migrate_auth.js` fails the deploy if any RLS policy allows anonymous or unconditional access. |
+| `.supabase/migrate*.js` | Legacy migration scripts, run by CI against production. `migrate_auth.js` fails the deploy if any RLS policy allows anonymous or unconditional access. Each script is one transaction; `migrate_auth.js` also fails on any policy it did not create. |
+| `types/` | Type-check config (`npm run typecheck`, run in CI). Not shipped. |
 | `scripts/backup.js`, `docs/` | Local backup script and its guide |
 | `.github/workflows/` | Deployment pipeline |
 
@@ -74,7 +75,7 @@ Secrets live in GitHub Actions secrets, Supabase function secrets, or local giti
 npx serve .            # or: python3 -m http.server 8080
 ```
 
-Open `http://localhost:3000` (or `:8080`). The service worker only handles push notifications (no offline cache). After each change, hard refresh; after changing `sw.js`, unregister it in DevTools > Application > Service Workers. Bump the `?v=` version in `index.html` and `APP_VERSION` in `script.js` with every release.
+Open `http://localhost:3000` (or `:8080`). The service worker caches the app shell (`zen-shell-<version>`) so the app opens with no signal, and handles push notifications; test offline with `npx playwright test offline-shell` (kill switch: `docs/service-worker.md`). After each change, hard refresh; after changing `sw.js`, unregister it in DevTools > Application > Service Workers. Bump the `?v=` version in `index.html` and `APP_VERSION` in `script.js` with every release.
 
 Tests (no dependencies, no network): `node --test "tests/**/*.test.js"`. Security check against the live database: `node scripts/check-member-permissions.js` (see `docs/local-setup.md`).
 

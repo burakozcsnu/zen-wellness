@@ -27,11 +27,20 @@ async function attachTestProject(page, env, problems) {
       }
     });
   }, { prodHost: PROD_HOST, testHost, prodKey: PROD_KEY, testKey: env.publishableKey });
+  // A blocking alert() is a bug (the app shows toasts): record it and close it. Confirm/prompt dialogs stay with the specs;
+  // with no spec handler (this one is the only listener) they are dismissed, as Playwright does by default.
+  page.on('dialog', dialog => {
+    if (dialog.type() === 'alert') { problems.push(`alert dialog: ${dialog.message()}`); return dialog.dismiss(); }
+    if (page.listenerCount('dialog') === 1) return dialog.dismiss();
+  });
   page.on('pageerror', error => problems.push(`pageerror: ${error.message}`));
   page.on('console', message => {
     if (message.type() === 'error') problems.push(`console.error: ${message.text()}`);
   });
-  page.on('response', response => {
+  page.on('response', async response => {
+    // Safety net: a production response means the rewrite above did not apply (WebKit under a service worker, or a spec
+    // route that used continue() instead of fallback()). A spec's own fulfill() keeps the production URL but has no server address.
+    if (new URL(response.url()).host === PROD_HOST && await response.serverAddr().catch(() => null)) problems.push(`PRODUCTION reached: ${response.request().method()} ${new URL(response.url()).pathname}`);
     if (response.status() >= 500) problems.push(`HTTP ${response.status()}: ${response.url()}`);
   });
   page.on('requestfailed', request => {
@@ -44,8 +53,18 @@ const test = base.test.extend({
 
   problems: async ({}, use) => use([]),
 
-  page: async ({ page, env, problems }, use) => {
+  // The iPhone install card (top of the screen) is dismissed up front so it never covers other specs' taps; install-hint.spec.js turns this off.
+  dismissIosHint: [true, { option: true }],
+
+  // Every spec fails on an alert() pop-up or on any response from production, whether or not it checks `problems` itself.
+  alertGuard: [async ({ problems }, use) => {
+    await use();
+    base.expect(problems.filter(p => p.startsWith('alert dialog') || p.startsWith('PRODUCTION reached'))).toEqual([]);
+  }, { auto: true }],
+
+  page: async ({ page, env, problems, dismissIosHint }, use) => {
     await attachTestProject(page, env, problems);
+    if (dismissIosHint) await page.addInitScript(() => { try { localStorage.setItem('ios_hint_dismissed', '1'); } catch { /* storage blocked */ } });
     await use(page);
   }
 });
