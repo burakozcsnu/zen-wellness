@@ -351,7 +351,7 @@ test.describe('pending button layout (phone)', () => {
       await loginSeeded(page, 'admin', env.adminEmail, env.adminPassword, '#app-wrapper');
       await page.locator('.member-card', { hasText: name }).click();
       await page.locator('#btn-tab-workouts').click();
-      expect(await topAtButton(page, '#sync-pending-button')).toBe(true);
+      await expect.poll(() => topAtButton(page, '#sync-pending-button')).toBe(true); // a running page transition takes taps until it ends
       await page.getByRole('button', { name: /Yeni Antrenman/ }).click();
       await expect(page.locator('#modal-workout')).toBeVisible();
       expect(await topAtButton(page, '#modal-workout')).toBe(true);

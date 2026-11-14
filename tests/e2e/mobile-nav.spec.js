@@ -74,7 +74,7 @@ test('client header: every button keeps its text inside its box and on screen', 
     const r = b.getBoundingClientRect();
     return { text: b.innerText, clipped: b.scrollWidth > b.clientWidth, offScreen: r.right > innerWidth + 1 || r.left < -1, height: Math.round(r.height) };
   }));
-  expect(buttons.length).toBe(2);
+  expect(buttons.length).toBe(3); // theme, logout, export
   for (const b of buttons) {
     expect(b.clipped, `${b.text} text sticks out of its box`).toBe(false);
     expect(b.offScreen, `${b.text} is off screen`).toBe(false);

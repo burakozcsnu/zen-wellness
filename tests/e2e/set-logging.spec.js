@@ -356,7 +356,7 @@ test.describe('client set logging', () => {
     await page.clock.runFor(30000);
     await expect(page.locator('#member-session-rest-text')).toHaveText('Dinlenme bitti');
     expect(await dev(page, 'vibrate')).toEqual([[200, 100, 200]]);
-    expect(await dev(page, 'clicks')).toBe(2); // and the rest end
+    expect(await dev(page, 'clicks')).toBe(1); // the rest end uses vibrate, not the switch
     await page.clock.runFor(5000);
 
     // Skipping cancels the booked beep and nothing vibrates later.
@@ -381,8 +381,16 @@ test.describe('client set logging', () => {
     await page.clock.pauseAt(new Date(Date.now() + 1000));
     await rowOf(screen, 0).getByRole('button', { name: 'Tamam' }).click();
     await expect(page.locator('#member-session-rest-text')).toHaveText('Dinlenme: 0:30');
+    expect(await dev(page, 'clicks')).toBe(1); // the tap itself
+    expect(await page.locator('#member-session-haptic input').isChecked()).toBe(true); // toggled by the tap
+    const focusBefore = await page.evaluate(() => document.activeElement?.outerHTML);
     await page.clock.runFor(30000);
     await expect(page.locator('#member-session-rest-text')).toHaveText('Dinlenme bitti');
+    // No vibrate (iPhone): the hidden switch is clicked once more, toggles once, and focus stays where it was.
+    expect(await dev(page, 'clicks')).toBe(2);
+    expect(await page.locator('#member-session-haptic input').isChecked()).toBe(false); // toggled exactly once more
+    expect(await page.evaluate(() => document.activeElement?.outerHTML)).toBe(focusBefore);
+    expect(await page.locator('#member-session-haptic').evaluate(el => [el.getAttribute('aria-hidden'), el.querySelector('input').tabIndex])).toEqual(['true', -1]);
     await page.evaluate(() => window.__dev.setHidden(true));
     await page.evaluate(() => window.__dev.setHidden(false));
     await screen.getByRole('button', { name: 'Kapat' }).click();

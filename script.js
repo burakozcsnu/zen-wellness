@@ -6,7 +6,7 @@
 
  document.addEventListener('DOMContentLoaded', () => {
     // --- CACHE BUSTER ---
-    const APP_VERSION = '1.3.128';
+    const APP_VERSION = '1.3.130';
     const vTag = document.getElementById('version-tag');
     if (vTag) vTag.textContent = `v${APP_VERSION} - Zen Wellness Club`;
 
@@ -1675,16 +1675,35 @@
 
     // --- NAVIGATION ---
 
+    // Cross-fade a view change when the browser can and the user has not asked for less motion. The browser runs the
+    // callback itself, even if it skips the animation; `ran` covers a throw from startViewTransition itself.
+    const withViewTransition = (update) => {
+        if (!document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return update();
+        let ran = false;
+        const once = () => {
+            if (ran) return;
+            ran = true;
+            try { update(); } catch (error) { handleError(error, 'View change'); }
+        };
+        try {
+            document.startViewTransition(once).ready.catch(() => {}); // a skipped transition rejects `ready`: expected
+        } catch (error) {
+            once();
+        }
+    };
+
     window.nav = (id, saveHistory = true) => {
         if (typeof window.toggleMobileMenu === 'function') window.toggleMobileMenu(false);
         if (saveHistory) {
             const currentTop = state.navHistory[state.navHistory.length - 1];
             if (currentTop !== id) state.navHistory.push(id);
         }
-        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-        const target = document.getElementById(id);
-        if (target) target.classList.add('active');
-        refreshAll();
+        withViewTransition(() => {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            const target = document.getElementById(id);
+            if (target) target.classList.add('active');
+            refreshAll();
+        });
     };
 
     window.toggleMobileMenu = (forceOpen) => {
@@ -1770,21 +1789,23 @@
             showToast("Bu ay için ölçüm zorunludur! Lütfen önce ölçüm kaydedin.", 'error');
             return;
         }
-        document.querySelectorAll('.tab-content').forEach(c => {
-            c.classList.remove('active');
-            c.style.display = 'none';
-        });
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        withViewTransition(() => {
+            document.querySelectorAll('.tab-content').forEach(c => {
+                c.classList.remove('active');
+                c.style.display = 'none';
+            });
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
 
-        const targetTab = document.getElementById(`tab-${id}`);
-        const targetBtn = document.getElementById(`btn-tab-${id}`);
-        if (targetTab) {
-            targetTab.classList.add('active');
-            targetTab.style.display = 'block';
-        }
-        if (targetBtn) targetBtn.classList.add('active');
-        if(id === 'analytics') window.loadMetricList();
-        refreshAll();
+            const targetTab = document.getElementById(`tab-${id}`);
+            const targetBtn = document.getElementById(`btn-tab-${id}`);
+            if (targetTab) {
+                targetTab.classList.add('active');
+                targetTab.style.display = 'block';
+            }
+            if (targetBtn) targetBtn.classList.add('active');
+            if(id === 'analytics') window.loadMetricList();
+            refreshAll();
+        });
     };
 
     // --- TIMER ---
@@ -2006,6 +2027,7 @@
         }
     };
 
+    window.addEventListener('zen-theme', () => { if (chartObj && document.getElementById('mainChart')) window.updateChart(); });
     window.updateChart = () => {
         const cat = document.getElementById('chart-cat').value;
         const metric = document.getElementById('chart-sub-cat').value;
@@ -2060,9 +2082,12 @@
                 : `${validPoints} kayıt · ${latestDelta === null ? 'İlk kayıt' : `Son değişim: ${formatDelta(latestDelta, chartUnit)}`}`;
         }
         // Green means better, red worse; metrics without an unambiguous direction stay neutral.
+        // Colours come from CSS variables so the chart follows the light/dark theme (redrawn on the 'zen-theme' event).
+        const css = getComputedStyle(document.documentElement);
+        const chartColor = name => css.getPropertyValue(name).trim();
         const getPointColor = (delta, better) => {
-            if (!better || delta === null || delta === 0) return '#e4ba94';
-            return (delta < 0) === (better === 'lower') ? '#35d07f' : '#ff5b67';
+            if (!better || delta === null || delta === 0) return chartColor('--chart-base');
+            return (delta < 0) === (better === 'lower') ? chartColor('--chart-better') : chartColor('--chart-worse');
         };
         const better = cat === 'antrenman' ? 'higher' : (cat === 'olcum' || cat === 'testler') ? measurementField?.better : null;
         // Workout points are compared with the last real value; a set without weight is skipped.
@@ -2077,13 +2102,13 @@
 
         chartObj = new Chart(ctx, {
             type: 'line',
-            data: { labels, datasets: [{ label: chartLabel, data, borderColor: '#e4ba94', pointBackgroundColor: pointColors, pointBorderColor: '#050505', pointRadius: 4, tension: 0.4, fill: true, backgroundColor: 'rgba(228, 186, 148, 0.12)' }] },
+            data: { labels, datasets: [{ label: chartLabel, data, borderColor: chartColor('--chart-base'), pointBackgroundColor: pointColors, pointBorderColor: chartColor('--chart-point-border'), pointRadius: 4, tension: 0.4, fill: true, backgroundColor: chartColor('--chart-fill') }] },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {
-                    x: { ticks: { color: '#b7a69a' }, grid: { color: 'rgba(228, 186, 148, 0.08)' } },
-                    y: { ticks: { color: '#b7a69a' }, grid: { color: 'rgba(228, 186, 148, 0.08)' } }
+                    x: { ticks: { color: chartColor('--chart-tick') }, grid: { color: chartColor('--chart-grid') } },
+                    y: { ticks: { color: chartColor('--chart-tick') }, grid: { color: chartColor('--chart-grid') } }
                 },
                 plugins: {
                     tooltip: {
@@ -4215,7 +4240,14 @@ window.editMeasurement = (id) => {
         osc.stop(at + 0.3);
         sessionUi.beep = osc;
     };
-    const sessionHaptic = () => sessionEl('member-session-haptic')?.click(); // iOS 17.4+ ticks when a switch toggles
+    const sessionHaptic = () => {
+        const label = sessionEl('member-session-haptic');
+        if (!label) return;
+        const before = document.activeElement;
+        label.click(); // iOS 17.4+ ticks when a switch toggles
+        const input = label.querySelector('input');
+        if (document.activeElement === input) { input.blur(); before?.focus?.({ preventScroll: true }); } // the label click must not steal focus
+    };
 
     const requestSessionWakeLock = async () => {
         if (!navigator.wakeLock || sessionUi.wakeLock || !sessionUi.workoutId) return;
@@ -4248,8 +4280,8 @@ window.editMeasurement = (id) => {
         sessionUi.phase = 'done';
         sessionEl('member-session-rest-text').textContent = 'Dinlenme bitti';
         sessionEl('member-session-rest-live').textContent = 'Dinlenme bitti';
-        navigator.vibrate?.([200, 100, 200]);
-        sessionHaptic();
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        else sessionHaptic(); // iPhone has no vibrate: the switch tick is its only buzz
         sessionUi.hideTimer = window.setTimeout(hideSessionRest, 5000);
     };
     const startSessionRest = seconds => {

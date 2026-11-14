@@ -2170,6 +2170,15 @@ select:focus {
     *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
 
+/* Page transitions (script.js withViewTransition): short cross-fade with an 8 px slide; the script skips them for reduced motion.
+   Kept short: while one runs the browser sends taps to the page root, so they do nothing. */
+@media (prefers-reduced-motion: no-preference) {
+    ::view-transition-old(root) { animation: vt-out var(--dur-fast) var(--ease) both; }
+    ::view-transition-new(root) { animation: vt-in var(--dur-fast) var(--ease) both; }
+    @keyframes vt-out { to { opacity: 0; transform: translateY(-8px); } }
+    @keyframes vt-in { from { opacity: 0; transform: translateY(8px); } }
+}
+
 /* KVKK consent step in the assessment wizard */
 .assessment-consent { margin: 1.15rem 0 0.9rem; padding: 1rem 1.1rem; max-height: 38vh; overflow-y: auto; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-soft); color: var(--text-dim); font-size: 0.92rem; line-height: 1.55; }
 .assessment-consent p + p { margin-top: 0.7rem; }
@@ -2308,3 +2317,147 @@ body .btn-filter-toggle { background: var(--surface-raised, #1b1b1b); color: var
 .coach-more, #btn-repeat-workout { min-height: var(--touch-target); }
 .workout-add-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; }
 .workout-add-actions button { min-height: var(--touch-target); }
+
+/* ===== Light theme ("gym-bright") =====
+   Dark is the default and is not edited above. The light theme only adds rules below, scoped to
+   :root[data-theme="light"] (set by the inline script in index.html), so dark stays exactly as it was.
+   Contrast is measured in tests/e2e/theme.spec.js. */
+:root {
+    --chart-base: #e4ba94;
+    --chart-better: #35d07f;
+    --chart-worse: #ff5b67;
+    --chart-point-border: #050505;
+    --chart-tick: #b7a69a;
+    --chart-grid: rgba(228, 186, 148, 0.08);
+    --chart-fill: rgba(228, 186, 148, 0.12);
+}
+.theme-toggle { min-height: 44px; min-width: 44px; padding: 0 0.85rem; font: inherit; white-space: nowrap; color: var(--text); background: transparent; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.sidebar-actions .theme-toggle { width: 100%; margin-top: 0.6rem; }
+.member-portal-header .theme-toggle { flex: none; }
+:root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f6f1ea;
+    --surface: #ffffff;
+    --surface-soft: #f1eae0;
+    --surface-raised: #ebe2d6;
+    --primary: #7a4a1c;
+    --primary-strong: #5f3810;
+    --accent: #7a4a1c;
+    --text: #2a211a;
+    --text-dim: #5c4e42;
+    --border: #8c7b6b;
+    --border-soft: rgba(122, 74, 28, 0.35);
+    --danger: #b3261e;
+    --success: #2b6e3f;
+    --warning: #8a5300;
+    --shadow-sm: 0 8px 24px rgba(60, 40, 20, 0.1);
+    --shadow-lg: 0 24px 60px rgba(60, 40, 20, 0.18);
+    --chart-base: #7a4a1c;
+    --chart-better: #1f7a45;
+    --chart-worse: #b3261e;
+    --chart-point-border: #ffffff;
+    --chart-tick: #5c4e42;
+    --chart-grid: rgba(122, 74, 28, 0.14);
+    --chart-fill: rgba(122, 74, 28, 0.12);
+}
+/* The login screen is a dark brand screen (the logo artwork is made for black): it keeps the dark tokens. */
+:root[data-theme="light"] .brand-splash {
+    --bg: #050505; --surface: #111111; --surface-soft: #181818; --surface-raised: #242424; --primary: #e4ba94; --primary-strong: #f1d0ad;
+    --accent: #b98b68; --text: #eee2d8; --text-dim: #b7a69a; --border: #55453a; --border-soft: rgba(228, 186, 148, 0.28);
+    --danger: #c8847d; --success: #c5b08f; --warning: #d5ab7c; color-scheme: dark;
+}
+:root[data-theme="light"] body,
+:root[data-theme="light"] .content { background: var(--bg); color: var(--text); }
+:root[data-theme="light"] .sidebar,
+:root[data-theme="light"] .mobile-brand,
+:root[data-theme="light"] .global-search-bar,
+:root[data-theme="light"] .member-portal-header { background: var(--surface); border-color: var(--border); }
+:root[data-theme="light"] .logo,
+:root[data-theme="light"] .mobile-logo { color: var(--text); }
+:root[data-theme="light"] .logo-wordmark,
+:root[data-theme="light"] .mobile-wordmark { color: var(--primary); }
+:root[data-theme="light"] .nav-btn,
+:root[data-theme="light"] .tab-btn,
+:root[data-theme="light"] .btn-back,
+:root[data-theme="light"] .btn-secondary,
+:root[data-theme="light"] .btn-undo { color: var(--text); }
+:root[data-theme="light"] .nav-btn:hover,
+:root[data-theme="light"] .tab-btn:hover,
+:root[data-theme="light"] .btn-back:hover,
+:root[data-theme="light"] .btn-secondary:hover { color: var(--primary-strong); background: var(--surface-raised); border-color: var(--primary); }
+:root[data-theme="light"] .nav-btn.active,
+:root[data-theme="light"] .tab-btn.active { color: var(--primary-strong); background: var(--surface-raised); border-color: var(--primary); }
+:root[data-theme="light"] .measurement-summary-item { background: var(--surface-raised); }
+:root[data-theme="light"] .btn-undo { border-color: var(--danger); }
+:root[data-theme="light"] .btn-undo:hover { background: rgba(179, 38, 30, 0.08); }
+:root[data-theme="light"] .sidebar-actions .btn-logout { color: var(--danger); border-color: var(--danger); }
+:root[data-theme="light"] input,
+:root[data-theme="light"] select,
+:root[data-theme="light"] textarea,
+:root[data-theme="light"] .search-main-area input { background: var(--surface); color: var(--text); border-color: var(--border); }
+:root[data-theme="light"] input::placeholder { color: #6f6153; }
+:root[data-theme="light"] input:focus,
+:root[data-theme="light"] select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(122, 74, 28, 0.2); }
+:root[data-theme="light"] input[readonly] { background: var(--surface-soft) !important; }
+:root[data-theme="light"] .filters-dropdown,
+:root[data-theme="light"] .profile-content-wrapper,
+:root[data-theme="light"] .analytics-container,
+:root[data-theme="light"] .pro-form,
+:root[data-theme="light"] .chart-main { background: var(--surface); border-color: var(--border); box-shadow: var(--shadow-sm); }
+:root[data-theme="light"] .card { background: var(--surface); border-color: var(--border); box-shadow: var(--shadow-sm); }
+:root[data-theme="light"] .card:hover { border-color: var(--primary); }
+:root[data-theme="light"] .member-overview-card,
+:root[data-theme="light"] .member-overview-card:nth-child(2),
+:root[data-theme="light"] .member-overview-card:nth-child(3),
+:root[data-theme="light"] .stat-card:nth-child(1),
+:root[data-theme="light"] .stat-card:nth-child(2),
+:root[data-theme="light"] .stat-card:nth-child(3),
+:root[data-theme="light"] .stat-card:nth-child(4) { background: var(--surface-soft) !important; border-color: var(--border); }
+:root[data-theme="light"] .member-overview-card span,
+:root[data-theme="light"] .stat-card span { color: var(--text-dim); }
+:root[data-theme="light"] .btn-primary,
+:root[data-theme="light"] .fab { background: var(--primary-strong); color: #ffffff; border-color: var(--primary-strong); box-shadow: 0 10px 24px rgba(60, 40, 20, 0.2); }
+:root[data-theme="light"] .btn-primary:hover,
+:root[data-theme="light"] .fab:hover { background: var(--primary); border-color: var(--primary); }
+:root[data-theme="light"] .measurement-summary,
+:root[data-theme="light"] .last-perf-hint { background: var(--surface-soft); border-color: var(--border); }
+:root[data-theme="light"] .tag,
+:root[data-theme="light"] .tag.secondary,
+:root[data-theme="light"] .tag.accent { background: var(--surface-raised); color: var(--text); border-color: var(--border); }
+:root[data-theme="light"] .btn-view { background: var(--surface-raised); color: var(--primary-strong); }
+:root[data-theme="light"] .btn-delete { color: var(--danger); border-color: var(--danger); }
+:root[data-theme="light"] .btn-delete:hover { background: var(--danger); color: #ffffff; }
+:root[data-theme="light"] .delta-positive { color: var(--success); }
+:root[data-theme="light"] .delta-negative,
+:root[data-theme="light"] .auth-error { color: var(--danger); }
+:root[data-theme="light"] .delta-neutral { color: var(--text-dim); }
+:root[data-theme="light"] .toast-error { border-color: var(--danger); }
+:root[data-theme="light"] .toast-success { border-color: var(--success); }
+:root[data-theme="light"] .toast { box-shadow: var(--shadow-sm); }
+:root[data-theme="light"] .modal { background: rgba(42, 33, 26, 0.55); }
+:root[data-theme="light"] .member-assessment { background: rgba(42, 33, 26, 0.6); }
+:root[data-theme="light"] .member-assessment-card { box-shadow: var(--shadow-lg); }
+:root[data-theme="light"] .member-portal-tabs button { border-color: var(--border); }
+:root[data-theme="light"] .member-portal-tabs button.active,
+:root[data-theme="light"] .member-portal-tabs button:hover { color: #ffffff; background: var(--primary-strong); border-color: var(--primary-strong); }
+@media (max-width: 820px) { /* the phone's bottom bar marks the active tab by a top bar, not a fill */
+    :root[data-theme="light"] .member-portal-tabs button { border-color: transparent; }
+    :root[data-theme="light"] .member-portal-tabs button.active,
+    :root[data-theme="light"] .member-portal-tabs button:hover { color: var(--primary-strong); background: transparent; border-top-color: var(--primary); }
+}
+:root[data-theme="light"] .coach-badge { color: #ffffff; background: var(--primary-strong); }
+:root[data-theme="light"] .member-session-restbar { background: var(--surface-raised); }
+/* Inline styles written by script.js: text colours made for a dark page. */
+:root[data-theme="light"] [style*="color:#fff"],
+:root[data-theme="light"] [style*="color: #fff"] { color: var(--text) !important; }
+:root[data-theme="light"] [style*="color:orange"],
+:root[data-theme="light"] [style*="color:#ffb142"] { color: var(--warning) !important; }
+:root[data-theme="light"] [style*="color:#ff4444"] { color: var(--danger) !important; }
+:root[data-theme="light"] [style*="#4CAF50"] { color: var(--success) !important; }
+:root[data-theme="light"] [style*="rgba(0,0,0,0.2)"],
+:root[data-theme="light"] [style*="rgba(0, 0, 0, 0.2)"] { background: var(--surface-soft) !important; }
+/* Faint white tints written inline for the dark theme vanish on light: give them visible light equivalents. */
+:root[data-theme="light"] [style*="border"][style*="rgba(255,255,255,0."],
+:root[data-theme="light"] [style*="border"][style*="rgba(255, 255, 255, 0."] { border-color: var(--border-soft) !important; }
+:root[data-theme="light"] [style*="background"][style*="rgba(255,255,255,0.0"],
+:root[data-theme="light"] [style*="background"][style*="rgba(255, 255, 255, 0.0"] { background-color: var(--surface-soft) !important; }
