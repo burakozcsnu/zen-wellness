@@ -397,4 +397,83 @@ test.describe('client set logging', () => {
     await expect(screen).toBeHidden();
     expect(clean(problems)).toEqual([]);
   });
+  // Locked-iPhone rest alert: the app arms a server push for the rest end and withdraws it when it can alert by itself.
+  // The stub gives the page a push subscription; the function call is intercepted (the real function is covered by rest-alert.itest.js).
+  const stubPush = page => page.addInitScript(() => {
+    if (!window.PushManager) window.PushManager = class {};
+    const registration = { pushManager: { getSubscription: async () => ({ endpoint: 'https://push.invalid/e2e' }) } };
+    Object.defineProperty(navigator.serviceWorker, 'getRegistration', { value: async () => registration, configurable: true });
+  });
+  const watchAlertCalls = async page => {
+    const calls = [];
+    await page.route('**/functions/v1/rest-alert', async route => {
+      calls.push(route.request().postDataJSON().alert_id);
+      await route.fulfill({ status: 202, body: 'Accepted' });
+    });
+    return calls;
+  };
+  const alertRow = async () => (await rest(admin, 'GET', `rest_alerts?select=*&member_id=eq.${memberId}`))[0];
+  const alertId = async () => (await alertRow())?.alert_id;
+  test.describe('rest alert push', () => {
+    test.afterEach(() => rest(admin, 'DELETE', `rest_alerts?member_id=eq.${memberId}`).catch(() => {}));
+
+    test('arms on rest start, replaces on +15 sn, withdrawn by Geç and by a visible rest end, kept when hidden', async ({ page, problems }) => {
+      await stubDevice(false)(page);
+      await stubPush(page);
+      const calls = await watchAlertCalls(page);
+      const screen = await begin(page);
+      const bar = page.locator('#member-session-rest-bar');
+      await page.clock.install();
+      await page.clock.pauseAt(new Date(Date.now() + 1000));
+
+      await rowOf(screen, 0).getByRole('button', { name: 'Tamam' }).click();
+      await expect.poll(alertId).toBeTruthy();
+      const first = await alertRow();
+      expect(first.sent_at).toBeNull();
+      expect(calls).toEqual([first.alert_id]);
+      expect(Math.abs(new Date(first.due_at).getTime() - Date.now() - 30000)).toBeLessThan(60000); // wall clock keeps running under the paused page clock
+
+      await bar.getByRole('button', { name: '+15 sn' }).click();
+      await expect.poll(alertId).not.toBe(first.alert_id);
+      expect(calls).toHaveLength(2);
+      expect(calls[1]).toBe(await alertId());
+      expect(new Date((await alertRow()).due_at).getTime()).toBeGreaterThan(new Date(first.due_at).getTime() + 10000);
+
+      await bar.getByRole('button', { name: 'Geç' }).click();
+      await expect.poll(alertId).toBeNull();
+
+      await rowOf(screen, 1).getByRole('button', { name: 'Tamam' }).click();
+      await expect.poll(alertId).toBeTruthy();
+      await page.clock.runFor(30000);
+      await expect(page.locator('#member-session-rest-text')).toHaveText('Dinlenme bitti');
+      await expect.poll(alertId).toBeNull(); // visible at the rest end: no duplicate push
+      await page.clock.runFor(5000);
+
+      // Hidden page (locked phone): the alert stays for the server to send.
+      await rowOf(screen, 2).getByRole('button', { name: 'Tamam' }).click();
+      await expect.poll(alertId).toBeTruthy();
+      await page.evaluate(() => window.__dev.setHidden(true));
+      await page.clock.runFor(30000);
+      await page.clock.runFor(5000);
+      expect(await alertId()).toBeTruthy();
+      expect(calls).toHaveLength(4);
+      expect(clean(problems)).toEqual([]);
+    });
+
+    test('without a push subscription or PushManager nothing is written or called', async ({ page, problems }) => {
+      await stubDevice(false)(page);
+      await page.addInitScript(() => { delete window.PushManager; });
+      const calls = await watchAlertCalls(page);
+      const screen = await begin(page);
+      await page.clock.install();
+      await page.clock.pauseAt(new Date(Date.now() + 1000));
+      await rowOf(screen, 0).getByRole('button', { name: 'Tamam' }).click();
+      await expect(page.locator('#member-session-rest-text')).toHaveText('Dinlenme: 0:30');
+      await page.locator('#member-session-rest-bar').getByRole('button', { name: 'Geç' }).click();
+      await page.waitForTimeout(1500);
+      expect(calls).toEqual([]);
+      expect(await alertRow()).toBeUndefined();
+      expect(clean(problems)).toEqual([]);
+    });
+  });
 });

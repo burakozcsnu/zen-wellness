@@ -1,4 +1,4 @@
-// Deploys the reminder Edge Function (plus a fake push service) to the TEST project, with throwaway keys.
+// Deploys the reminder and rest-alert Edge Functions (plus a fake push service) to the TEST project, with throwaway keys.
 // Usage: node scripts/deploy-test-functions.js    (needs .env.test and a logged-in Supabase CLI; never touches production)
 const crypto = require('crypto');
 const fs = require('fs');
@@ -32,6 +32,8 @@ try {
   fs.mkdirSync(path.join(functions, 'send-schedule-reminders'), { recursive: true });
   fs.mkdirSync(path.join(functions, 'fake-push'), { recursive: true });
   fs.copyFileSync(path.join(root, 'supabase', 'functions', 'send-schedule-reminders', 'index.ts'), path.join(functions, 'send-schedule-reminders', 'index.ts'));
+  fs.mkdirSync(path.join(functions, 'rest-alert'), { recursive: true });
+  fs.copyFileSync(path.join(root, 'supabase', 'functions', 'rest-alert', 'index.ts'), path.join(functions, 'rest-alert', 'index.ts'));
   fs.copyFileSync(path.join(root, 'tests', 'fixtures', 'fake-push', 'index.ts'), path.join(functions, 'fake-push', 'index.ts'));
   fs.writeFileSync(path.join(work, 'supabase', 'config.toml'), 'project_id = "zen-test"\n');
   const envFile = path.join(work, 'secrets.env');
@@ -49,7 +51,7 @@ try {
   };
   console.log('Setting test function secrets...');
   cli('secrets', 'set', '--env-file', envFile);
-  for (const name of ['send-schedule-reminders', 'fake-push']) {
+  for (const name of ['send-schedule-reminders', 'rest-alert', 'fake-push']) {
     console.log(`Deploying ${name} to the test project...`);
     cli('functions', 'deploy', name, '--use-api', '--no-verify-jwt', '--workdir', work);
   }

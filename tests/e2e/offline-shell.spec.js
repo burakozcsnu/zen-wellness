@@ -5,7 +5,7 @@ const { env } = require('../helpers/api');
 const { startAppServer } = require('../helpers/app-server');
 
 const appVersion = fs.readFileSync('script.js', 'utf8').match(/APP_VERSION = '([^']+)'/)[1];
-const killSwitch = fs.readFileSync('docs/service-worker.md', 'utf8').match(/```js\n([\s\S]*?)```/)[1];
+const killSwitch = fs.readFileSync('docs/service-worker.md', 'utf8').match(/```js\r?\n([\s\S]*?)```/)[1]; // \r?: a Windows checkout (autocrlf) has CRLF
 
 // Waits until the worker controls this page (the shell is cached by then).
 const controlled = page => page.waitForFunction(() => navigator.serviceWorker.ready.then(() => !!navigator.serviceWorker.controller));

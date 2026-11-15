@@ -36,6 +36,11 @@ npx supabase@2.122.1 functions deploy send-schedule-reminders --project-ref mdcv
 ```
 `--no-verify-jwt` is required: the timer sends `CRON_SECRET`, not a user login. Without it, every timer call is rejected before the function runs.
 
+**Deploy the rest-alert function** (pushes "Dinlenme bitti" to a locked iPhone; the app calls it with the client's login, and it checks the caller itself, so `--no-verify-jwt` is needed here too). It uses the same function secrets as above:
+```powershell
+npx supabase@2.122.1 functions deploy rest-alert --project-ref mdcvljbbnoxqsfwcjvqz --use-api --no-verify-jwt
+```
+
 **Security check: what can a client change?** (after any change to access rules)
 ```powershell
 node scripts/check-member-permissions.js

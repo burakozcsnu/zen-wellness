@@ -6,7 +6,7 @@
 
  document.addEventListener('DOMContentLoaded', () => {
     // --- CACHE BUSTER ---
-    const APP_VERSION = '1.3.130';
+    const APP_VERSION = '1.3.131';
     const vTag = document.getElementById('version-tag');
     if (vTag) vTag.textContent = `v${APP_VERSION} - Zen Wellness Club`;
 
@@ -4196,7 +4196,7 @@ window.editMeasurement = (id) => {
     // --- Client workout session screen: log sets, rest countdown ---
     const SESSION_ACTIVE_MS = 12 * 36e5; // an unfinished session older than this is not offered for "Devam Et"
     const SESSION_STEP = { w: 2.5, r: 1, s: 5 };
-    const sessionUi = { workoutId: null, rest: 60, draft: {}, editing: new Set(), endsAt: 0, phase: 'idle', timer: null, hideTimer: null, wakeLock: null, audio: null, beep: null, starting: false };
+    const sessionUi = { workoutId: null, rest: 60, draft: {}, editing: new Set(), endsAt: 0, phase: 'idle', timer: null, hideTimer: null, wakeLock: null, audio: null, beep: null, starting: false, alertId: null };
     const sessionEl = id => document.getElementById(id);
     const sessionDomain = () => window.TrainerProExerciseDomain;
 
@@ -4259,7 +4259,46 @@ window.editMeasurement = (id) => {
         }
     };
 
+    // Locked iPhone: the page is frozen, so the server pushes "rest is over" (rest-alert function). Only for a client whose device
+    // already has a push subscription; never asks for permission. Best effort: failures only log, the local timer is unaffected.
+    // One queue keeps arm/cancel writes in order.
+    let restAlertQueue = Promise.resolve();
+    const queueRestAlert = task => { restAlertQueue = restAlertQueue.then(task).catch(error => console.warn('Dinlenme bildirimi ayarlanamadı:', error)); };
+    const writeRestAlert = (memberId, alertId, dueAt) => dataService.mutate('rest_alerts', 'upsert',
+        { member_id: memberId, alert_id: alertId, due_at: new Date(dueAt).toISOString(), sent_at: null, updated_at: new Date().toISOString() }, { onConflict: 'member_id' });
+    const armRestAlert = () => {
+        if (!document.body.classList.contains('member-portal-active') || !('PushManager' in window) || !navigator.serviceWorker || !navigator.onLine) return;
+        const memberId = sessionMemberId();
+        const alertId = sessionUi.alertId = crypto.randomUUID();
+        const dueAt = sessionUi.endsAt;
+        queueRestAlert(async () => {
+            const registration = await navigator.serviceWorker.getRegistration('./');
+            if (!registration || !(await registration.pushManager.getSubscription())) { sessionUi.alertId = null; return; }
+            const { error, queued } = await writeRestAlert(memberId, alertId, dueAt);
+            if (error || queued || sessionUi.alertId !== alertId) return; // already cancelled or replaced: no call
+            const { data } = await supabase.auth.getSession();
+            const response = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/rest-alert`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${data.session?.access_token}`, apikey: CONFIG.SUPABASE_KEY, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alert_id: alertId })
+            });
+            if (!response.ok) console.warn('Dinlenme bildirimi kabul edilmedi:', response.status);
+        });
+    };
+    // The visible app alerts by itself, so it withdraws the push; a hidden page leaves it to fire.
+    const cancelRestAlert = () => {
+        const alertId = sessionUi.alertId;
+        if (!alertId || document.visibilityState !== 'visible') return;
+        sessionUi.alertId = null;
+        const memberId = sessionMemberId();
+        queueRestAlert(async () => {
+            const { error } = await writeRestAlert(memberId, null, Date.now());
+            if (error) console.warn('Dinlenme bildirimi iptal edilemedi:', error);
+        });
+    };
+
     const hideSessionRest = () => {
+        cancelRestAlert();
         window.clearInterval(sessionUi.timer);
         window.clearTimeout(sessionUi.hideTimer);
         sessionUi.timer = sessionUi.hideTimer = null;
@@ -4280,6 +4319,7 @@ window.editMeasurement = (id) => {
         sessionUi.phase = 'done';
         sessionEl('member-session-rest-text').textContent = 'Dinlenme bitti';
         sessionEl('member-session-rest-live').textContent = 'Dinlenme bitti';
+        cancelRestAlert();
         if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
         else sessionHaptic(); // iPhone has no vibrate: the switch tick is its only buzz
         sessionUi.hideTimer = window.setTimeout(hideSessionRest, 5000);
@@ -4291,6 +4331,7 @@ window.editMeasurement = (id) => {
         sessionEl('member-session-rest-live').textContent = '';
         sessionEl('member-session-rest-bar').hidden = false;
         scheduleSessionBeep(seconds);
+        armRestAlert();
         sessionUi.timer = window.setInterval(tickSessionRest, 1000);
         tickSessionRest();
     };
@@ -4298,6 +4339,7 @@ window.editMeasurement = (id) => {
         if (sessionUi.phase !== 'counting') return startSessionRest(15);
         sessionUi.endsAt += 15000;
         scheduleSessionBeep(sessionDomain().restRemaining(sessionUi.endsAt, Date.now()));
+        armRestAlert();
         tickSessionRest();
     };
     window.skipSessionRest = hideSessionRest;

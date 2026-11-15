@@ -245,6 +245,15 @@ async function migrate() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
+      -- One row per member, overwritten on every rest: the rest-alert function reads it to push "rest is over".
+      CREATE TABLE IF NOT EXISTS rest_alerts (
+        member_id BIGINT PRIMARY KEY REFERENCES uyeler(id) ON DELETE CASCADE,
+        alert_id UUID,
+        due_at TIMESTAMPTZ NOT NULL,
+        sent_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS push_reminder_deliveries (
         id BIGINT PRIMARY KEY,
         subscription_id BIGINT NOT NULL REFERENCES push_subscriptions(id) ON DELETE CASCADE,

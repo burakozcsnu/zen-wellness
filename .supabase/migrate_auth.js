@@ -25,6 +25,7 @@ const tables = [
   'beslenme_planlari',
   'weekly_program_schedule',
   'push_subscriptions',
+  'rest_alerts',
   'push_reminder_deliveries',
   'schedule_notifications',
   'schedule_attendance',
@@ -70,6 +71,9 @@ async function migrate() {
       }
       if (table === 'push_subscriptions') {
         stmts.push(`DROP POLICY IF EXISTS "push_subscriptions_member_access" ON push_subscriptions;`);
+      }
+      if (table === 'rest_alerts') {
+        stmts.push(`DROP POLICY IF EXISTS "rest_alerts_member_access" ON rest_alerts;`);
       }
       if (table === 'push_reminder_deliveries') {
         stmts.push(`DROP POLICY IF EXISTS "push_reminder_deliveries_member_read" ON push_reminder_deliveries;`);
@@ -251,6 +255,21 @@ async function migrate() {
       WITH CHECK (EXISTS (
         SELECT 1 FROM uyeler
         WHERE uyeler.id = push_subscriptions.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ));
+
+      CREATE POLICY "rest_alerts_member_access"
+      ON rest_alerts
+      FOR ALL
+      TO authenticated
+      USING (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = rest_alerts.member_id
+          AND uyeler.auth_user_id = auth.uid()
+      ))
+      WITH CHECK (EXISTS (
+        SELECT 1 FROM uyeler
+        WHERE uyeler.id = rest_alerts.member_id
           AND uyeler.auth_user_id = auth.uid()
       ));
 
