@@ -107,3 +107,27 @@ for (const notch of [0, 47, 59]) {
     expect(topmost).toBe(true);
   });
 }
+
+// "Kapat" on the workout screen and a window's "×" must sit below the iPhone status bar (simulated as above).
+test('close buttons stay below the status bar (notch 59px)', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === 'desktop', 'phone layout only');
+  await page.route('**/style.css*', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, body: (await response.text()).replace(/env\(safe-area-inset-top\)/g, '59px') });
+  });
+  await login(page, 'admin', env.adminEmail, env.adminPassword);
+  await expect(page.locator('#app-wrapper')).toBeVisible({ timeout: 20000 });
+  await page.evaluate(() => window.openModal('modal-undo-log'));
+  const close = await page.locator('#modal-undo-log .close').boundingBox();
+  expect(close.y, 'window × is below the status bar').toBeGreaterThanOrEqual(59);
+  // The workout screen lives in the client portal.
+  await page.evaluate(() => window.closeModal('modal-undo-log'));
+  if (await page.locator('.mobile-logo').isVisible()) await page.locator('.mobile-logo').click();
+  await page.getByRole('button', { name: /Çıkış Yap/ }).first().click();
+  await expect(page.locator('#brand-splash')).toBeVisible({ timeout: 10000 });
+  await login(page, 'user', env.clientEmail, env.clientPassword);
+  await expect(page.getByText('Hoş geldiniz')).toBeVisible({ timeout: 20000 });
+  await page.evaluate(() => { document.getElementById('member-session').hidden = false; });
+  const kapat = await page.locator('#member-session .member-session-header button', { hasText: 'Kapat' }).boundingBox();
+  expect(kapat.y, 'Kapat is below the status bar').toBeGreaterThanOrEqual(59);
+});

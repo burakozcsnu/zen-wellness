@@ -14,12 +14,8 @@ const cacheUrls = page => page.evaluate(async () => {
   for (const name of await caches.keys()) for (const request of await (await caches.open(name)).keys()) urls.push(request.url);
   return urls;
 });
-// The app always starts on the splash; the saved session is picked up when the role button is tapped.
-const reopen = async (page, role) => {
-  await page.reload();
-  await page.locator('.brand-splash-logo').click({ force: true });
-  await page.locator(role === 'admin' ? '.portal-role-admin' : '.portal-role:not(.portal-role-admin)').click();
-};
+// A saved login opens its panel on load, with or without signal.
+const reopen = page => page.reload();
 const loginScreen = page => expect(page.locator('.brand-splash-logo')).toBeVisible({ timeout: 20000 });
 
 test.describe('opens without signal', () => {

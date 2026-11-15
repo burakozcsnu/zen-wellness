@@ -131,7 +131,9 @@ nav { display: flex; flex-direction: column; gap: 0.5rem; flex-grow: 1; }
 .btn-back { background: var(--border); color: white; border: none; padding: 0.8rem 1.2rem; border-radius: 10px; cursor: pointer; font-weight: bold; transition: all var(--dur) var(--ease); }
 .btn-back:hover { background: var(--primary); color: black; }
 .search-main-area { display: flex; gap: 0.5rem; flex-grow: 1; position: relative; }
-input, select { background: var(--bg); border: 1px solid var(--border); color: white; padding: 0.8rem; border-radius: 10px; width: 100%; outline: none; }
+input, select, textarea { background: var(--bg); border: 1px solid var(--border); color: white; padding: 0.8rem; border-radius: 10px; width: 100%; outline: none; }
+/* A note box sits under its label, not beside it. */
+textarea { display: block; margin-top: 0.35rem; resize: vertical; }
 .filters-dropdown { position: absolute; top: 100%; left: 0; width: 400px; background: var(--surface); border: 1px solid var(--border); border-radius: 15px; padding: 1.5rem; margin-top: 0.8rem; display: none; z-index: 1001; }
 .filters-dropdown.active { display: block; }
 
@@ -413,10 +415,11 @@ canvas#mainChart {
     .modal-content.wide {
         width: calc(100% - 1rem);
         max-width: none;
-        margin: 0.5rem auto;
+        /* Clear the iPhone status bar and home indicator (viewport-fit=cover). */
+        margin: calc(0.5rem + env(safe-area-inset-top)) auto calc(0.5rem + env(safe-area-inset-bottom));
         padding: 1rem;
         border-radius: 16px;
-        max-height: calc(100dvh - 1rem) !important;
+        max-height: calc(100dvh - 1rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
     }
     .close { top: 0.65rem; right: 0.75rem; font-size: 1.75rem; }
     .modal-content h2 { padding-right: 2rem; font-size: 1.25rem; }
@@ -553,14 +556,14 @@ nav { gap: 0.3rem; }
     border-radius: var(--radius-sm);
 }
 .btn-back:hover, .btn-secondary:hover { color: var(--text); border-color: var(--primary); background: #222d39; }
-input, select {
+input, select, textarea {
     background: var(--surface-soft);
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
 }
-input::placeholder { color: #647181; }
-input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(143, 183, 217, 0.1); }
+input::placeholder, textarea::placeholder { color: #647181; }
+input:focus, select:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(143, 183, 217, 0.1); }
 .filters-dropdown {
     background: var(--surface-raised);
     border-color: var(--border);
@@ -2034,16 +2037,19 @@ body::before {
 }
 input,
 select,
+textarea,
 .search-main-area input {
     background: #111111;
     color: #ffffff;
     border-color: #686868;
 }
-input::placeholder {
+input::placeholder,
+textarea::placeholder {
     color: #929292;
 }
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
     border-color: #ffffff;
     box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.14);
 }
@@ -2259,7 +2265,7 @@ body .btn-filter-toggle { background: var(--surface-raised, #1b1b1b); color: var
 .member-session[hidden] { display: none; }
 .member-session { position: fixed; inset: 0; z-index: 6000; display: flex; flex-direction: column; background: var(--bg); color: var(--text); }
 .member-session button { min-height: 44px; min-width: 44px; font: inherit; cursor: pointer; }
-.member-session-header { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+.member-session-header { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: calc(0.75rem + env(safe-area-inset-top)) 1rem 0.75rem; border-bottom: 1px solid var(--border); }
 .member-session-header h2 { flex: 1 1 8rem; margin: 0; font-size: 1.1rem; overflow-wrap: anywhere; }
 .member-session-restset { flex: 1 1 100%; display: flex; align-items: center; gap: 0.5rem; }
 .member-session-restset span { flex: 1; }
@@ -2395,9 +2401,11 @@ body .btn-filter-toggle { background: var(--surface-raised, #1b1b1b); color: var
 :root[data-theme="light"] select,
 :root[data-theme="light"] textarea,
 :root[data-theme="light"] .search-main-area input { background: var(--surface); color: var(--text); border-color: var(--border); }
-:root[data-theme="light"] input::placeholder { color: #6f6153; }
+:root[data-theme="light"] input::placeholder,
+:root[data-theme="light"] textarea::placeholder { color: #6f6153; }
 :root[data-theme="light"] input:focus,
-:root[data-theme="light"] select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(122, 74, 28, 0.2); }
+:root[data-theme="light"] select:focus,
+:root[data-theme="light"] textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(122, 74, 28, 0.2); }
 :root[data-theme="light"] input[readonly] { background: var(--surface-soft) !important; }
 :root[data-theme="light"] .filters-dropdown,
 :root[data-theme="light"] .profile-content-wrapper,

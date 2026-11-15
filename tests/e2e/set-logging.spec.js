@@ -168,8 +168,6 @@ test.describe('client set logging', () => {
     await expect.poll(async () => (await steps(session.id)).length).toBe(1);
 
     await page.reload();
-    await page.locator('.brand-splash-logo').click({ force: true }); // the splash shows on every load; the role resumes the saved session
-    await page.locator('.portal-role:not(.portal-role-admin)').click();
     await expect(page.getByText('Hoş geldiniz')).toBeVisible({ timeout: 20000 });
     await page.locator('[data-portal-tab="workouts"]').click();
     const item = page.locator('.member-portal-list li', { hasText: title });

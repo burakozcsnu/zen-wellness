@@ -6,7 +6,7 @@
 
  document.addEventListener('DOMContentLoaded', () => {
     // --- CACHE BUSTER ---
-    const APP_VERSION = '1.3.131';
+    const APP_VERSION = '1.3.132';
     const vTag = document.getElementById('version-tag');
     if (vTag) vTag.textContent = `v${APP_VERSION} - Zen Wellness Club`;
 
@@ -361,6 +361,15 @@
             // Not a chosen logout (wrong role, expired session): drop the cache but keep the queue, the same person normally logs in again.
             localStorage.removeItem('trainerpro_cache');
             exitAdminPortal();
+            return;
+        }
+        // iOS restarts the app after a lock: a login saved on this device opens its panel without the login form.
+        // The e-mail link case (access_token in the address) is handled by SIGNED_IN below.
+        if (event === 'INITIAL_SESSION' && session && !window.location.hash.includes('access_token')) {
+            window.setTimeout(() => {
+                if (isMemberSession(session)) enterMemberPortal();
+                else if (isAdminSession(session)) enterAdminPortal();
+            }, 0);
             return;
         }
         if (event === 'SIGNED_IN' && window.location.hash.includes('access_token') && session) {

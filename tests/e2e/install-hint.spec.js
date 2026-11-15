@@ -27,9 +27,7 @@ test('iPhone hint: shown after login, gone after Tamam, not again; never on desk
   expect((await ok.boundingBox()).height).toBeGreaterThanOrEqual(44);
   await ok.click();
   await expect(hint).toHaveCount(0);
-  await page.reload(); // still signed in: the role button enters the app
-  await page.locator('.brand-splash-logo').click({ force: true });
-  await page.locator('.portal-role-admin').click();
+  await page.reload(); // still signed in: the saved login enters the app on load
   await expect(page.locator('#brand-splash')).toBeHidden({ timeout: 20000 });
   await expect(hint).toHaveCount(0);
 });

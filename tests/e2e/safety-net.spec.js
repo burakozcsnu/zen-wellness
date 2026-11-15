@@ -139,7 +139,7 @@ test.describe('visible errors', () => {
 test.describe('version tag', () => {
   test('shows the real app version', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('#version-tag')).toHaveText('v1.3.131 - Zen Wellness Club');
+    await expect(page.locator('#version-tag')).toHaveText('v1.3.132 - Zen Wellness Club');
   });
 });
 

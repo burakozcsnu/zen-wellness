@@ -123,7 +123,9 @@ describe('rest-alert (test project)', { skip }, () => {
       assert.ok(Date.now() - started < 3000, 'the function must answer before the rest ends');
       assert.equal((await row()).sent_at, null, 'sent before the rest ended');
       assert.ok(await waitFor(async () => (await row()).sent_at, 15000), 'sent_at was never set');
-      assert.ok(Date.now() - started >= 5500, 'sent before the grace period was over');
+      // Compare the server's own times: this machine's clock may run up to a second apart from the function's.
+      const sent = await row();
+      assert.ok(new Date(sent.sent_at) - new Date(sent.due_at) >= 3000, 'sent before the grace period was over');
     });
 
     it('two calls for the same alert end with the alert claimed; a sent alert is not accepted again', async () => {

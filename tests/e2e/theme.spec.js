@@ -122,11 +122,11 @@ test.describe('theme: system default, toggle, persistence', () => {
     await expect(button).toHaveText('Tema: Koyu');
     expect(await theme(page)).toBe('dark');
     expect(await choice(page)).toBe('dark');
-    await page.reload(); // back on the login screen: the choice must already be applied
+    await page.reload(); // the choice must already be applied before the portal reopens
     expect(await theme(page)).toBe('dark');
     await expect(page.locator('.member-portal-header .theme-toggle')).toHaveText('Tema: Koyu', { timeout: 20000 });
     expect(await theme(page)).toBe('dark');
-    await page.evaluate(() => window.cycleTheme()); // the portal is behind the login screen after a reload; the button's own handler
+    await page.evaluate(() => window.cycleTheme()); // the button's own handler
     await expect(page.locator('.member-portal-header .theme-toggle')).toHaveText('Tema: Otomatik');
     expect(await theme(page)).toBe('light'); // auto again: the system is light
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

@@ -38,11 +38,10 @@ test.describe('sign in and out', () => {
   test('after a reload the person is taken straight back in; after signing out they are not', async ({ page }) => {
     await login(page, 'admin', env.adminEmail, env.adminPassword);
     await expect(page.locator('.member-card').first()).toBeVisible({ timeout: 20000 });
-    // The app shows its splash on every load; choosing the role resumes the saved session without a password.
+    // A saved login opens the panel on load (iOS restarts the app after a lock): no splash tap, no password.
     await page.reload();
-    await page.locator('.brand-splash-logo').click({ force: true });
-    await page.locator('.portal-role-admin').click();
     await expect(page.locator('.member-card').first()).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('#modal-auth')).toBeHidden();
 
     if (await page.locator('.mobile-logo').isVisible()) await page.locator('.mobile-logo').click();
     await page.getByRole('button', { name: /Çıkış Yap/ }).first().click();
@@ -52,6 +51,16 @@ test.describe('sign in and out', () => {
     await page.locator('.portal-role-admin').click();
     await expect(page.locator('#modal-auth')).toBeVisible(); // asks for the password again
     await expectSignedOut(page);
+  });
+
+  test('a client is taken straight back into the portal after a reload', async ({ page }) => {
+    await login(page, 'user', env.clientEmail, env.clientPassword);
+    await expect(page.getByText('Hoş geldiniz')).toBeVisible({ timeout: 20000 });
+    await page.reload();
+    await expect(page.getByText('Hoş geldiniz')).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('#brand-splash')).toBeHidden();
+    await expect(page.locator('#modal-auth')).toBeHidden();
+    await expect(page.locator('body')).not.toHaveClass(/portal-entered/); // the client never lands in the trainer panel
   });
 });
 

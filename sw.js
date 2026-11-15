@@ -3,7 +3,7 @@
 const appUrl = (relativePath = './') => new URL(relativePath, self.registration.scope).href;
 
 // Must always equal APP_VERSION in script.js and the ?v= values in index.html (scripts/check-version-bump.js checks it).
-const SHELL_VERSION = '1.3.131';
+const SHELL_VERSION = '1.3.132';
 const CACHE_NAME = `zen-shell-${SHELL_VERSION}`;
 const V = `?v=${SHELL_VERSION}`;
 // Every same-origin file the app needs to open. Never sw.js itself, never another origin.

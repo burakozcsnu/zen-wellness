@@ -43,3 +43,21 @@ test('workout and diet rows: every field has a name, every control is at least 4
     await rest(token, 'DELETE', `uyeler?id=eq.${member.id}`);
   }
 });
+
+// The schedule window's "Not (opsiyonel)" box follows the theme like the other fields and sits under its label.
+test('schedule note box: styled like the other fields, under its label', async ({ page }) => {
+  await login(page, 'admin', env.adminEmail, env.adminPassword);
+  await expect(page.locator('#app-wrapper')).toBeVisible({ timeout: 20000 });
+  await page.evaluate(() => window.openModal('modal-schedule'));
+  const note = page.locator('#schedule-notes');
+  await expect(note).toBeVisible();
+  const [noteBg, selectBg] = await Promise.all([note, page.locator('#schedule-member')].map(l => l.evaluate(el => getComputedStyle(el).backgroundColor)));
+  expect(noteBg).toBe(selectBg);
+  const label = await page.locator('label[for="schedule-notes"]').evaluate(el => {
+    const range = document.createRange();
+    range.setStart(el.firstChild, 0);
+    range.setEnd(el.firstChild, el.firstChild.length);
+    return range.getBoundingClientRect().bottom; // the label's own text, not the box inside it
+  });
+  expect((await note.boundingBox()).y).toBeGreaterThanOrEqual(label);
+});

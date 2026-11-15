@@ -15,9 +15,9 @@ const controlled = page => page.waitForFunction(() => navigator.serviceWorker.re
 const cacheNames = page => page.evaluate(() => caches.keys()).catch(() => null);
 // The splash (z 10000) covers the bar until the app is entered, by design: enter as a visitor does, so the bar must be clickable.
 const enterApp = async (page, signedIn = false) => {
+  if (signedIn) return expect(page.locator('#brand-splash')).toBeHidden({ timeout: 20000 }); // a saved login enters on load
   await page.locator('.brand-splash-logo').click({ force: true }); // endless breathing animation never counts as stable
   await page.locator('.portal-role-admin').click();
-  if (signedIn) return expect(page.locator('#brand-splash')).toBeHidden({ timeout: 20000 });
   await page.locator('#auth-email').fill(env.adminEmail);
   await page.locator('#auth-password').fill(env.adminPassword);
   await page.locator('#modal-auth button[type="submit"]').click();
@@ -123,8 +123,7 @@ test.describe('new version prompt', () => {
       await page.locator('#update-bar').getByRole('button', { name: 'Yenile' }).click();
       await reloaded;
       expect(await page.evaluate(() => JSON.parse(localStorage.getItem('trainerpro_sync_queue') || '[]').length)).toBe(1);
-      await page.locator('.brand-splash-logo').click({ force: true });
-      await page.locator('.portal-role-admin').click();
+      // The saved login reopens the panel on load, offline too.
       await expect(page.locator('#sync-pending-button')).toHaveText('1', { timeout: 20000 });
     } finally {
       await rest(admin, 'DELETE', `uyeler?id=eq.${memberId}`).catch(() => {}); // cascades to the measurement
